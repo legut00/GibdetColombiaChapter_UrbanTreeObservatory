@@ -21,6 +21,9 @@ use modal::SpeciesModal;
 use model::{Catalog, Category, Filters, Species, fetch_all_species};
 use sidebar::FilterSidebar;
 
+/// Cards rendered per batch ("Show next" adds another batch).
+const BATCH: usize = 25;
+
 const SAVED_KEY: &str = "urban-tree-observatory:saved-species";
 
 const ICON_GRID: &str = "M4 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2V6zM14 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2V6zM4 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2v-2zM14 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2v-2z";
@@ -96,6 +99,35 @@ pub fn SpeciesCatalog() -> impl IntoView {
             })
         })
     });
+
+    // Rendering cards is the expensive part (filtering 438 items is not), so only `BATCH`
+    // cards are shown at first. The extra batches remember the filters they were requested
+    // for, so any filter change goes back to the first batch without rendering the full list.
+    let extra = RwSignal::new((0usize, Filters::default()));
+    let limit = Memo::new(move |_| {
+        let f = ctx.filters.get();
+        extra.with(|(n, at)| BATCH * (1 + if *at == f { *n } else { 0 }))
+    });
+    // Forget the extra batches once the filters change, so that going back to earlier
+    // filters (e.g. clearing a search) also starts again from the first batch. `limit` is
+    // already `BATCH` at this point, so this reset does not re-render anything.
+    Effect::new(move |_| {
+        let f = ctx.filters.get();
+        if extra.with_untracked(|(_, at)| *at != f) {
+            extra.set((0, f));
+        }
+    });
+    let visible = Memo::new(move |_| {
+        let n = limit.get();
+        filtered.with(|v| v[..v.len().min(n)].to_vec())
+    });
+    let show_more = move |_| {
+        let f = ctx.filters.get_untracked();
+        extra.update(|(n, at)| {
+            *n = if *at == f { *n + 1 } else { 1 };
+            *at = f;
+        });
+    };
 
     let saved_only = move || ctx.filters.with(|f| f.saved_only);
 
@@ -175,7 +207,7 @@ pub fn SpeciesCatalog() -> impl IntoView {
                                     view! {
                                         <div class="grid gap-4 grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4">
                                             <For
-                                                each=move || filtered.get()
+                                                each=move || visible.get()
                                                 key=|s| s.id
                                                 children={move |s: Arc<Species>| view! { <SpeciesCard species=s ctx /> }}
                                             />
@@ -183,8 +215,21 @@ pub fn SpeciesCatalog() -> impl IntoView {
                                     }
                                     .into_any()
                                 } else {
-                                    view! { <SpeciesTable rows=filtered ctx /> }.into_any()
+                                    view! { <SpeciesTable rows=visible ctx /> }.into_any()
                                 }}
+                                <div class="flex flex-col items-center gap-2 py-6">
+                                    <span class="text-sm text-gray-500">
+                                        {move || format!("Showing {} of {} species", visible.with(Vec::len), filtered.with(Vec::len))}
+                                    </span>
+                                    <Show when=move || visible.with(Vec::len) < filtered.with(Vec::len)>
+                                        <button class=format!("{BTN} {BTN_ON} px-5") on:click=show_more>
+                                            {move || {
+                                                let left = filtered.with(Vec::len) - visible.with(Vec::len);
+                                                format!("Show next {}", left.min(BATCH))
+                                            }}
+                                        </button>
+                                    </Show>
+                                </div>
                             </Show>
                         </section>
                     </div>
