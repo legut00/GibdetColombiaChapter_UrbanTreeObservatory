@@ -50,7 +50,7 @@ The **Map** and **Species** pages talk to the API. The other pages currently use
 ### Species catalog (`/species`)
 
 Lists the 438 species from `GET /api/v1/taxonomy/species/` (public, read-only). All pages are
-downloaded once and filtered client-side: scientific or common name, family/genus, functional group range,
+downloaded once and filtered client-side: common name, scientific name (a genus lists all its species), family, functional group range,
 habit, IUCN status, origin, flower color and canopy shape. It offers grid/list views, a detail
 sheet with GBIF / Tropical Plants links, and CSV export of the filtered rows. Cards follow the team's
 "card blockframe" template: common name + functional-group tag, photo placeholder, scientific

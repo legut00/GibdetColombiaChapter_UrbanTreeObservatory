@@ -215,15 +215,21 @@ fn ResultsBar(total: usize, shown: Signal<usize>, ctx: Ctx) -> impl IntoView {
     let chips = move || {
         let cur = f.get();
         let mut out = Vec::new();
+        if !cur.common_name.trim().is_empty() {
+            out.push(chip(
+                format!("Common name: {}", cur.common_name.trim()),
+                Box::new(move || f.update(|f| f.common_name.clear())),
+            ));
+        }
         if !cur.scientific_name.trim().is_empty() {
             out.push(chip(
-                format!("Name: {}", cur.scientific_name.trim()),
+                format!("Scientific name: {}", cur.scientific_name.trim()),
                 Box::new(move || f.update(|f| f.scientific_name.clear())),
             ));
         }
         if !cur.family.trim().is_empty() {
             out.push(chip(
-                format!("Family/genus: {}", cur.family.trim()),
+                format!("Family: {}", cur.family.trim()),
                 Box::new(move || f.update(|f| f.family.clear())),
             ));
         }

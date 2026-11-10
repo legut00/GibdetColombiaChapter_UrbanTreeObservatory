@@ -3,7 +3,7 @@
 use leptos::prelude::*;
 
 use super::Ctx;
-use super::model::{self, CANOPIES, Catalog, Category, GROUP_MAX, GROUP_MIN, IUCN, LIFE_FORMS, ORIGINS};
+use super::model::{self, CANOPIES, Catalog, Category, Filters, GROUP_MAX, GROUP_MIN, IUCN, LIFE_FORMS, ORIGINS};
 
 const INPUT: &str = "w-full border border-gray-300 rounded-lg py-1.5 px-3 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500";
 
@@ -90,27 +90,9 @@ pub(super) fn FilterSidebar(catalog: Catalog, ctx: Ctx) -> impl IntoView {
         <aside class="w-64 shrink-0 bg-white rounded-lg shadow p-4 overflow-y-auto space-y-3">
             <h2 class="text-sm font-semibold text-gray-800">"Filters"</h2>
 
-            <div class="space-y-1">
-                <label class="text-xs font-semibold text-gray-500 uppercase tracking-wider">"Name"</label>
-                <input
-                    type="text"
-                    class=INPUT
-                    placeholder="Scientific or common name"
-                    prop:value=move || f.with(|f| f.scientific_name.clone())
-                    on:input=move |ev| f.update(|f| f.scientific_name = event_target_value(&ev))
-                />
-            </div>
-
-            <div class="space-y-1">
-                <label class="text-xs font-semibold text-gray-500 uppercase tracking-wider">"Family or genus"</label>
-                <input
-                    type="text"
-                    class=INPUT
-                    placeholder="e.g. Fabaceae"
-                    prop:value=move || f.with(|f| f.family.clone())
-                    on:input=move |ev| f.update(|f| f.family = event_target_value(&ev))
-                />
-            </div>
+            <TextFilter label="Common name" placeholder="e.g. Guayacán" ctx get=|f| &f.common_name set=|f| &mut f.common_name />
+            <TextFilter label="Scientific name" placeholder="Genus or species, e.g. Ficus" ctx get=|f| &f.scientific_name set=|f| &mut f.scientific_name />
+            <TextFilter label="Family" placeholder="e.g. Fabaceae" ctx get=|f| &f.family set=|f| &mut f.family />
 
             <div class="space-y-1 border-t border-gray-100 pt-3">
                 <label class="text-xs font-semibold text-gray-500 uppercase tracking-wider">"Functional group"</label>
@@ -124,5 +106,29 @@ pub(super) fn FilterSidebar(catalog: Catalog, ctx: Ctx) -> impl IntoView {
 
             {sections}
         </aside>
+    }
+}
+
+/// Text box bound to one `Filters` string field.
+#[component]
+fn TextFilter(
+    label: &'static str,
+    placeholder: &'static str,
+    ctx: Ctx,
+    get: fn(&Filters) -> &String,
+    set: fn(&mut Filters) -> &mut String,
+) -> impl IntoView {
+    let f = ctx.filters;
+    view! {
+        <label class="block space-y-1">
+            <span class="text-xs font-semibold text-gray-500 uppercase tracking-wider">{label}</span>
+            <input
+                type="text"
+                class=INPUT
+                placeholder=placeholder
+                prop:value=move || f.with(|x| get(x).clone())
+                on:input=move |ev| f.update(|x| *set(x) = event_target_value(&ev))
+            />
+        </label>
     }
 }

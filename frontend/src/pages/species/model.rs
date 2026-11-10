@@ -320,6 +320,7 @@ impl Category {
 
 #[derive(Clone, PartialEq)]
 pub struct Filters {
+    pub common_name: String,
     pub scientific_name: String,
     pub family: String,
     pub selected: Vec<(Category, &'static str)>,
@@ -331,6 +332,7 @@ pub struct Filters {
 impl Default for Filters {
     fn default() -> Self {
         Self {
+            common_name: String::new(),
             scientific_name: String::new(),
             family: String::new(),
             selected: Vec::new(),
@@ -364,23 +366,20 @@ impl Filters {
 
     /// Within a category the selected codes are OR-ed; categories are AND-ed.
     pub fn matches(&self, s: &Species, saved: &HashSet<i64>) -> bool {
+        // Each text box searches only its own field (case-insensitive substring).
+        // The scientific name starts with the genus, so typing a genus lists all its species.
+        let common = self.common_name.trim().to_lowercase();
+        if !common.is_empty() && !s.common_name().is_some_and(|c| c.to_lowercase().contains(&common)) {
+            return false;
+        }
+
         let sci = self.scientific_name.trim().to_lowercase();
-        if !sci.is_empty() {
-            let hit = s.scientific_name.to_lowercase().contains(&sci)
-                || s.common_name().is_some_and(|c| c.to_lowercase().contains(&sci))
-                || s.accepted_scientific_name
-                    .as_deref()
-                    .is_some_and(|a| a.to_lowercase().contains(&sci));
-            if !hit {
-                return false;
-            }
+        if !sci.is_empty() && !s.scientific_name.to_lowercase().contains(&sci) {
+            return false;
         }
 
         let fam = self.family.trim().to_lowercase();
-        if !fam.is_empty()
-            && !s.family().to_lowercase().contains(&fam)
-            && !s.genus.name.to_lowercase().contains(&fam)
-        {
+        if !fam.is_empty() && !s.family().to_lowercase().contains(&fam) {
             return false;
         }
 
@@ -443,6 +442,28 @@ mod tests {
         assert!(f.matches(&palm, &saved) && f.matches(&tree, &saved));
         f.saved_only = true;
         assert!(!f.matches(&palm, &saved) && f.matches(&tree, &saved));
+    }
+
+    #[test]
+    fn text_filters_search_only_their_own_field() {
+        let mut s = species(serde_json::json!({"common_name": "Caucho"}));
+        let none = HashSet::new();
+        let only = |f: fn(&mut Filters)| {
+            let mut x = Filters::default();
+            f(&mut x);
+            x
+        };
+        // Common name box: common name only.
+        assert!(only(|f| f.common_name = "cauch".into()).matches(&s, &none));
+        assert!(!only(|f| f.common_name = "ficus".into()).matches(&s, &none));
+        // Scientific name box: genus prefix lists the genus, never the common name.
+        assert!(only(|f| f.scientific_name = "Ficus".into()).matches(&s, &none));
+        assert!(!only(|f| f.scientific_name = "caucho".into()).matches(&s, &none));
+        // Family box: family only, not the genus.
+        assert!(only(|f| f.family = "morac".into()).matches(&s, &none));
+        assert!(!only(|f| f.family = "ficus".into()).matches(&s, &none));
+        s.common_name = None;
+        assert!(!only(|f| f.common_name = "cauch".into()).matches(&s, &none));
     }
 
     #[test]
