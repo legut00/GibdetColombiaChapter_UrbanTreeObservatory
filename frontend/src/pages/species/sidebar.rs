@@ -29,6 +29,7 @@ const SECTIONS: [(Category, &str, bool); 5] = [
 #[component]
 pub(super) fn FilterSidebar(catalog: Catalog, ctx: Ctx) -> impl IntoView {
     let f = ctx.filters;
+    let illustrated = catalog.iter().filter(|s| s.illustration().is_some()).count();
 
     let group_select = move |is_min: bool| {
         view! {
@@ -93,6 +94,17 @@ pub(super) fn FilterSidebar(catalog: Catalog, ctx: Ctx) -> impl IntoView {
             <TextFilter label="Common name" placeholder="e.g. Guayacán" ctx get=|f| &f.common_name set=|f| &mut f.common_name />
             <TextFilter label="Scientific name" placeholder="Genus or species, e.g. Ficus" ctx get=|f| &f.scientific_name set=|f| &mut f.scientific_name />
             <TextFilter label="Family" placeholder="e.g. Fabaceae" ctx get=|f| &f.family set=|f| &mut f.family />
+
+            <label class="flex items-center gap-2 text-sm text-gray-700 cursor-pointer hover:text-primary-700">
+                <input
+                    type="checkbox"
+                    class="rounded border-gray-300 accent-primary-600"
+                    prop:checked=move || f.with(|f| f.illustrated_only)
+                    on:change=move |_| f.update(|f| f.illustrated_only = !f.illustrated_only)
+                />
+                <span class="flex-1">"With illustration only"</span>
+                <span class="text-xs text-gray-400">{illustrated}</span>
+            </label>
 
             <div class="space-y-1 border-t border-gray-100 pt-3">
                 <label class="text-xs font-semibold text-gray-500 uppercase tracking-wider">"Functional group"</label>

@@ -110,6 +110,29 @@ fn parse<T: for<'de> Deserialize<'de>>(v: serde_json::Value) -> Result<T, String
 // Derived values
 // ---------------------------------------------------------------------------
 
+/// Species with a cover illustration in `public/assets/species/<genus-epithet>.webp`
+/// (640×640 WebP). Matched against the scientific name or the accepted name, because some
+/// records differ (e.g. "Aiouea Cinnamomum triplinerve", accepted "Cinnamomum triplinerve …").
+pub const ILLUSTRATIONS: [&str; 17] = [
+    "Amyris balsamifera",
+    "Anacardium excelsum",
+    "Bursera graveolens",
+    "Cedrela odorata",
+    "Cinnamomum triplinerve",
+    "Cordia alliodora",
+    "Cupania cinerea",
+    "Erythroxylum amazonicum",
+    "Euphorbia cotinifolia",
+    "Hura crepitans",
+    "Lacistema aggregatum",
+    "Myrcia cucullata",
+    "Pachira insignis",
+    "Pithecellobium dulce",
+    "Senna reticulata",
+    "Thevetia ahouai",
+    "Xylosma intermedia",
+];
+
 /// Functional-group traits shown on cards: carbon sequestration, shade, canopy, height.
 pub const TRAITS: [(&str, &str); 4] = [
     ("CS", "Carbon sequestration (%)"),
@@ -121,6 +144,19 @@ pub const TRAITS: [(&str, &str); 4] = [
 impl Species {
     pub fn common_name(&self) -> Option<&str> {
         self.common_name.as_deref().map(str::trim).filter(|n| !n.is_empty())
+    }
+
+    /// URL of the cover illustration, if there is one.
+    pub fn illustration(&self) -> Option<String> {
+        let accepted = self.accepted_scientific_name.as_deref().unwrap_or("");
+        ILLUSTRATIONS
+            .iter()
+            .find(|n| {
+                self.scientific_name == **n
+                    || accepted == **n
+                    || accepted.strip_prefix(**n).is_some_and(|rest| rest.starts_with(' '))
+            })
+            .map(|n| format!("/assets/species/{}.webp", n.to_lowercase().replace(' ', "-")))
     }
 
     pub fn family(&self) -> &str {
@@ -327,6 +363,7 @@ pub struct Filters {
     pub group_min: u8,
     pub group_max: u8,
     pub saved_only: bool,
+    pub illustrated_only: bool,
 }
 
 impl Default for Filters {
@@ -339,6 +376,7 @@ impl Default for Filters {
             group_min: GROUP_MIN,
             group_max: GROUP_MAX,
             saved_only: false,
+            illustrated_only: false,
         }
     }
 }
@@ -396,6 +434,10 @@ impl Filters {
                 Some(g) if g >= self.group_min && g <= self.group_max => {}
                 _ => return false,
             }
+        }
+
+        if self.illustrated_only && s.illustration().is_none() {
+            return false;
         }
 
         !self.saved_only || saved.contains(&s.id)
@@ -464,6 +506,19 @@ mod tests {
         assert!(!only(|f| f.family = "ficus".into()).matches(&s, &none));
         s.common_name = None;
         assert!(!only(|f| f.common_name = "cauch".into()).matches(&s, &none));
+    }
+
+    #[test]
+    fn illustration_matches_scientific_or_accepted_name() {
+        let direct = species(serde_json::json!({"scientific_name": "Hura crepitans"}));
+        assert_eq!(direct.illustration().as_deref(), Some("/assets/species/hura-crepitans.webp"));
+        let accepted = species(serde_json::json!({
+            "scientific_name": "Aiouea Cinnamomum triplinerve",
+            "accepted_scientific_name": "Cinnamomum triplinerve (Ruiz & Pav.) Kosterm."
+        }));
+        assert_eq!(accepted.illustration().as_deref(), Some("/assets/species/cinnamomum-triplinerve.webp"));
+        let prefix_only = species(serde_json::json!({"accepted_scientific_name": "Hura crepitansoides"}));
+        assert_eq!(prefix_only.illustration(), None);
     }
 
     #[test]

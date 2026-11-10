@@ -79,3 +79,15 @@ code with `KNOWN ISSUE:`. Main ones:
 On client-side navigation `leptos_router` mounts the new route asynchronously, so an `Effect`
 can run before the page's elements are in the document. Any code that needs a real DOM node
 (Leaflet, Chart.js) must go through `interop::when_connected`.
+
+### Species illustrations
+
+Cover illustrations live in `public/assets/species/<genus>-<epithet>.webp` (lowercase, 640×640
+WebP, ~30 KB each) and are listed in `ILLUSTRATIONS` in `src/pages/species/model.rs`. A species
+matches by scientific name or accepted name. Species without one show a placeholder; the sidebar
+has a "With illustration only" filter. To add one:
+
+```bash
+convert "Genus epithet.png" -resize 640x640 -strip -quality 80 public/assets/species/genus-epithet.webp
+# then add "Genus epithet" to ILLUSTRATIONS
+```

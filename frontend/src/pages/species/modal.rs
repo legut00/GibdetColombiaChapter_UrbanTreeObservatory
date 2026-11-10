@@ -5,7 +5,7 @@ use std::sync::Arc;
 use leptos::prelude::*;
 
 use super::card::{
-    BookmarkButton, NAME_BAR, SCI_BAR, flower_swatch, group_tag, iucn_badge, life_form_icon,
+    BookmarkButton, ILLUSTRATION_BG, NAME_BAR, SCI_BAR, illustration_img, flower_swatch, group_tag, iucn_badge, life_form_icon,
     photo_placeholder, svg,
 };
 use super::model::{self, Species, TRAITS};
@@ -31,6 +31,8 @@ pub(super) fn SpeciesModal(species: Arc<Species>, ctx: Ctx) -> impl IntoView {
         .clone()
         .filter(|a| !a.is_empty() && *a != s.scientific_name);
     let common = s.common_name().map(str::to_string);
+    let illustration = s.illustration();
+    let image_bg = if illustration.is_some() { ILLUSTRATION_BG } else { "bg-[#DFE1E6]" };
 
     let fact = |label: &'static str, value: AnyView| {
         view! {
@@ -76,8 +78,11 @@ pub(super) fn SpeciesModal(species: Arc<Species>, ctx: Ctx) -> impl IntoView {
                 </div>
 
                 <div class="grid gap-4 sm:grid-cols-[2fr_3fr]">
-                    <div class="bg-[#DFE1E6] h-48 sm:h-auto flex items-center justify-center">
-                        {photo_placeholder()}
+                    <div class=format!("relative overflow-hidden h-64 sm:h-auto sm:min-h-[16rem] flex items-center justify-center {image_bg}")>
+                        {match illustration {
+                            Some(src) => illustration_img(src, &s.scientific_name).into_any(),
+                            None => photo_placeholder().into_any(),
+                        }}
                     </div>
                     <div class="space-y-3">
                         <div class=format!("{SCI_BAR} rounded px-3 py-1.5 text-white")>

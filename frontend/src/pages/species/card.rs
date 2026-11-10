@@ -16,6 +16,8 @@ const TH_SM: &str = "px-4 py-3 text-left text-xs font-medium text-gray-500 upper
 /// Template colors.
 pub(super) const NAME_BAR: &str = "bg-[#CBC3A3]";
 pub(super) const SCI_BAR: &str = "bg-[#4B525E]";
+/// Paper color of the illustrations, so `object-contain` letterboxing blends in.
+pub(super) const ILLUSTRATION_BG: &str = "bg-[#F8F1E1]";
 
 pub(super) const ICON_BOOKMARK: &str = "M5 5a2 2 0 012-2h10a2 2 0 012 2v16l-7-3.5L5 21V5z";
 
@@ -203,6 +205,17 @@ pub(super) fn BookmarkButton(
     }
 }
 
+/// Square illustration fitted in a wider box. A blurred, zoomed copy of the same image fills
+/// the sides, so the letterboxing takes the paper color of each illustration.
+pub(super) fn illustration_img(src: String, scientific_name: &str) -> impl IntoView + use<> {
+    view! {
+        <img src=src.clone() alt="" aria-hidden="true" loading="lazy" decoding="async"
+            class="absolute inset-0 h-full w-full object-cover scale-125 blur-xl" />
+        <img src=src alt=format!("Illustration of {scientific_name}") loading="lazy" decoding="async"
+            class="relative h-full w-full object-contain" />
+    }
+}
+
 /// Gray "image" placeholder from the template (no species photos in the API yet).
 pub(super) fn photo_placeholder() -> impl IntoView {
     view! {
@@ -224,6 +237,8 @@ pub(super) fn SpeciesCard(species: Arc<Species>, ctx: Ctx) -> impl IntoView {
     let open = move |_| ctx.selected.set(Some(species.clone()));
     let common = s.common_name().map(str::to_string);
     let common_title = common.clone().unwrap_or_default();
+    let illustration = s.illustration();
+    let image_bg = if illustration.is_some() { ILLUSTRATION_BG } else { "bg-[#DFE1E6]" };
 
     view! {
         <article
@@ -240,8 +255,11 @@ pub(super) fn SpeciesCard(species: Arc<Species>, ctx: Ctx) -> impl IntoView {
                 {group_tag(s.group())}
             </div>
 
-            <div class="relative bg-[#DFE1E6] h-40 flex items-center justify-center">
-                {photo_placeholder()}
+            <div class=format!("relative h-48 flex items-center justify-center overflow-hidden {image_bg}")>
+                {match illustration {
+                    Some(src) => illustration_img(src, &s.scientific_name).into_any(),
+                    None => photo_placeholder().into_any(),
+                }}
                 <BookmarkButton id=s.id ctx class="absolute top-2 right-2 p-1.5 rounded-full bg-white/80 hover:bg-white text-gray-800 shadow-sm" />
             </div>
 

@@ -295,6 +295,9 @@ fn ResultsBar(total: usize, shown: Signal<usize>, ctx: Ctx) -> impl IntoView {
                 }),
             ));
         }
+        if cur.illustrated_only {
+            out.push(chip("With illustration".into(), Box::new(move || f.update(|f| f.illustrated_only = false))));
+        }
         if cur.saved_only {
             out.push(chip("Saved only".into(), Box::new(move || f.update(|f| f.saved_only = false))));
         }
