@@ -38,14 +38,24 @@ public/vendor/        leaflet.js/.css, chart.umd.js (vendored, pinned versions)
 public/assets/        static assets
 src/
 ├── main.rs           mounts <App/>
-├── app.rs            router: /dashboard (default), /map, /trees, /reports, /alerts, /analytics, /about
+├── app.rs            router: /dashboard (default), /map, /trees, /species, /reports, /alerts, /analytics, /about
 ├── layout.rs         navbar + collapsible sidebar
 ├── api.rs            HTTP (gloo-net) + JS `||`/truthiness helpers
 ├── interop/          Leaflet & Chart.js bindings, `when_connected` DOM helper
-└── pages/            one module per route
+└── pages/            one module per route (species/ = catalog: model, filters, cards, CSV)
 ```
 
-Only the **Map** page talks to the API. The other pages currently use hardcoded sample data.
+The **Map** and **Species** pages talk to the API. The other pages currently use hardcoded sample data.
+
+### Species catalog (`/species`)
+
+Lists the 438 species from `GET /api/v1/taxonomy/species/` (public, read-only). All pages are
+downloaded once and filtered client-side: scientific name, family/genus, functional group range,
+habit, IUCN status, origin, flower color and canopy shape. It offers grid/list views, a detail
+sheet with GBIF / Tropical Plants links, and CSV export of the filtered rows. Saved species
+(bookmarks) are stored in the browser's `localStorage` only. Functional-group metrics appear only
+for the 168 species that have a group. Trait ranges are shown sorted, because some records have
+`min > max`.
 
 ## Known issues
 

@@ -7,7 +7,7 @@ use leptos_router::path;
 use crate::layout::Layout;
 use crate::pages::{
     about::About, alerts::Alerts, analytics::Analytics, dashboard::Dashboard, map::MapPage,
-    reports::Reports, trees::Trees,
+    reports::Reports, species::SpeciesCatalog, trees::Trees,
 };
 
 #[component]
@@ -21,6 +21,7 @@ pub fn App() -> impl IntoView {
                     <Route path=path!("/dashboard") view=Dashboard />
                     <Route path=path!("/map") view=MapPage />
                     <Route path=path!("/trees") view=Trees />
+                    <Route path=path!("/species") view=SpeciesCatalog />
                     <Route path=path!("/reports") view=Reports />
                     <Route path=path!("/alerts") view=Alerts />
                     <Route path=path!("/analytics") view=Analytics />
