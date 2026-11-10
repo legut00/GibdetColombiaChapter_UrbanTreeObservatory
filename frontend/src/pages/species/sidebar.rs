@@ -91,11 +91,11 @@ pub(super) fn FilterSidebar(catalog: Catalog, ctx: Ctx) -> impl IntoView {
             <h2 class="text-sm font-semibold text-gray-800">"Filters"</h2>
 
             <div class="space-y-1">
-                <label class="text-xs font-semibold text-gray-500 uppercase tracking-wider">"Scientific name"</label>
+                <label class="text-xs font-semibold text-gray-500 uppercase tracking-wider">"Name"</label>
                 <input
                     type="text"
                     class=INPUT
-                    placeholder="e.g. Ficus"
+                    placeholder="Scientific or common name"
                     prop:value=move || f.with(|f| f.scientific_name.clone())
                     on:input=move |ev| f.update(|f| f.scientific_name = event_target_value(&ev))
                 />

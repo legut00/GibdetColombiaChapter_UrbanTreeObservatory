@@ -1,4 +1,8 @@
-//! Grid card, list table and small shared pieces (icons, badges, bookmark button).
+//! Grid card (layout from the team's "card blockframe" template), list table and shared pieces.
+//!
+//! Card, top to bottom: common name + functional-group tag, photo placeholder (the API has no
+//! photos yet), scientific name, the four functional-group traits, and an icon strip with
+//! flower color, habit, IUCN status, origin and canopy shape.
 
 use std::sync::Arc;
 
@@ -8,6 +12,10 @@ use super::Ctx;
 use super::model::{self, Species, TRAITS};
 
 const TH_SM: &str = "px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider";
+
+/// Template colors.
+pub(super) const NAME_BAR: &str = "bg-[#CBC3A3]";
+pub(super) const SCI_BAR: &str = "bg-[#4B525E]";
 
 pub(super) const ICON_BOOKMARK: &str = "M5 5a2 2 0 012-2h10a2 2 0 012 2v16l-7-3.5L5 21V5z";
 
@@ -20,51 +28,140 @@ pub(super) fn svg(d: &'static str, class: &'static str) -> impl IntoView {
     }
 }
 
-/// Simple line drawing for each life form (placeholder: the API has no photos).
-fn life_form_paths(code: &str) -> &'static str {
-    match code {
-        // Tree
-        "TR" => r#"<circle cx="12" cy="9" r="6"/><path d="M12 15v6M9 21h6"/>"#,
-        // Shrub
-        "SH" => r#"<path d="M3 18c0-4.5 4-8 9-8s9 3.5 9 8z"/><path d="M8 18c0-2 1.5-4 4-4s4 2 4 4"/><path d="M12 18v3"/>"#,
-        // Palm
-        "PT" => r#"<path d="M12 21V9"/><path d="M12 9C9.5 5.5 6 5 3 7"/><path d="M12 9c2.5-3.5 6-4 9-2"/><path d="M12 9C11 5.5 8.5 3.5 6 3"/><path d="M12 9c1-3.5 3.5-5.5 6-6"/>"#,
-        // Other: sprout
-        _ => r#"<path d="M12 21v-8"/><path d="M12 13c-4 0-6.5-3-6.5-7 4 0 6.5 3 6.5 7z"/><path d="M12 13c0-4 2.5-7 6.5-7 0 4-2.5 7-6.5 7z"/>"#,
+/// Codes are interpolated into SVG markup, so only short alphanumeric ones are accepted.
+fn safe_code(code: &str) -> &str {
+    if !code.is_empty() && code.len() <= 3 && code.chars().all(|c| c.is_ascii_alphanumeric()) {
+        code
+    } else {
+        "?"
     }
 }
 
-pub(super) fn life_form_icon(code: &str, class: &'static str) -> impl IntoView + use<> {
+/// Raw SVG markup rendered through `inner_html` (static shapes, codes checked by `safe_code`).
+fn raw_svg(view_box: &'static str, class: &'static str, title: String, inner: String) -> impl IntoView {
     view! {
-        <svg xmlns="http://www.w3.org/2000/svg" class=class fill="none" viewBox="0 0 24 24" stroke="currentColor"
-            stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" inner_html=life_form_paths(code)>
-        </svg>
-    }
-}
-
-pub(super) fn iucn_badge(code: &str) -> impl IntoView + use<> {
-    let (label, bg, desc) = model::iucn_info(code);
-    view! {
-        <span class=format!("inline-flex items-center px-2 py-0.5 rounded text-xs font-semibold text-white {bg}") title=desc>
-            {format!("{code} · {label}")}
+        <span class="inline-flex" title=title>
+            <svg xmlns="http://www.w3.org/2000/svg" class=class viewBox=view_box inner_html=inner></svg>
         </span>
     }
 }
 
-pub(super) fn group_badge(group: Option<u8>) -> impl IntoView + use<> {
-    match group {
-        Some(g) => view! {
-            <span class="px-2 py-0.5 rounded-full text-xs font-semibold bg-primary-600 text-white" title="Functional group">
-                {format!("Group {g}")}
-            </span>
-        }
-        .into_any(),
-        None => view! {
-            <span class="px-2 py-0.5 rounded-full text-xs font-medium bg-gray-200 text-gray-600" title="No functional group assigned">
-                "No group"
-            </span>
-        }
-        .into_any(),
+// ---------------------------------------------------------------------------
+// Strip icons
+// ---------------------------------------------------------------------------
+
+/// Colored drawing for each life form.
+fn life_form_markup(code: &str) -> &'static str {
+    match code {
+        // Tree: round crown + trunk
+        "TR" => r##"<path d="M17.5 22h5l1 15h-7z" fill="#92400E"/><path d="M20 30l-4-4M20 28l4-4" stroke="#92400E" stroke-width="2" stroke-linecap="round"/><circle cx="20" cy="13" r="9" fill="#16A34A"/><circle cx="12.5" cy="19" r="6.5" fill="#15803D"/><circle cx="27.5" cy="19" r="6.5" fill="#15803D"/><circle cx="20" cy="20" r="6" fill="#22C55E"/>"##,
+        // Shrub: low wide bush
+        "SH" => r##"<path d="M18.5 30h3v7h-3z" fill="#92400E"/><ellipse cx="11" cy="25" rx="8" ry="7" fill="#15803D"/><ellipse cx="29" cy="25" rx="8" ry="7" fill="#15803D"/><ellipse cx="20" cy="21" rx="10" ry="9" fill="#16A34A"/><ellipse cx="20" cy="27" rx="9" ry="5" fill="#22C55E"/>"##,
+        // Palm: curved trunk + fronds
+        "PT" => r##"<path d="M19 12c1 9 0 17-2 26h4c1.5-9 2-17 1-26z" fill="#A16207"/><path d="M20 12C15 6 8 6 3 10c5-1 10 0 17 2zM20 12c5-6 12-6 17-2-5-1-10 0-17 2zM20 12c-4-1-9 2-12 8 4-4 8-6 12-8zM20 12c4-1 9 2 12 8-4-4-8-6-12-8zM20 12c-1-5 1-9 5-11-2 4-3 7-5 11z" fill="#16A34A" stroke="#15803D" stroke-width=".8"/>"##,
+        // Other: sprout
+        _ => r##"<path d="M20 37V20" stroke="#15803D" stroke-width="3" stroke-linecap="round"/><path d="M20 22C12 22 7 16 7 8c8 0 13 6 13 14z" fill="#22C55E"/><path d="M20 20c0-7 5-12 13-12 0 7-5 12-13 12z" fill="#16A34A"/><path d="M8 37h24" stroke="#92400E" stroke-width="3" stroke-linecap="round"/>"##,
+    }
+}
+
+pub(super) fn life_form_icon(code: &str, class: &'static str) -> impl IntoView + use<> {
+    raw_svg(
+        "0 0 40 40",
+        class,
+        format!("Habit: {}", model::life_form_label(code)),
+        life_form_markup(code).to_string(),
+    )
+}
+
+fn flower_icon(code: &str) -> impl IntoView + use<> {
+    let (fill, text) = model::flower_fill(code);
+    let petals = [(20.0, 8.0), (27.6, 13.5), (24.7, 22.5), (15.3, 22.5), (12.4, 13.5)]
+        .iter()
+        .map(|(x, y)| format!(r##"<circle cx="{x}" cy="{y}" r="6.5" fill="{fill}" stroke="#14532D" stroke-width="1.5"/>"##))
+        .collect::<String>();
+    let inner = format!(
+        r##"<path d="M20 26v19" stroke="#14532D" stroke-width="2.5"/><path d="M20 41c-6 0-10-3.5-10-8 6 0 10 3 10 8zM20 41c6 0 10-3.5 10-8-6 0-10 3-10 8z" fill="#4ADE80" stroke="#14532D" stroke-width="1.5"/>{petals}<circle cx="20" cy="16" r="7.5" fill="{fill}"/><text x="20" y="19.6" text-anchor="middle" font-size="10" font-weight="700" font-family="sans-serif" fill="{text}">{}</text>"##,
+        safe_code(code)
+    );
+    raw_svg("0 0 40 48", "h-12 w-10", format!("Flower color: {}", model::flower_label(code)), inner)
+}
+
+fn iucn_icon(code: &str) -> impl IntoView + use<> {
+    let (bg, fg) = model::iucn_colors(code);
+    let (label, ..) = model::iucn_info(code);
+    view! {
+        <span
+            class="h-11 w-11 rounded-full border-2 border-gray-800 flex items-center justify-center font-bold text-base"
+            style=format!("background:{bg};color:{fg}")
+            title=format!("IUCN: {label}")
+        >
+            {code.to_string()}
+        </span>
+    }
+}
+
+fn origin_icon(code: &str) -> impl IntoView + use<> {
+    let inner = format!(
+        r##"<path d="M20 2.5l17 12.3-6.5 20.2h-21L3 14.8z" fill="#DCDCF8" stroke="#111827" stroke-width="2" stroke-linejoin="round"/><text x="20" y="25" text-anchor="middle" font-size="11" font-weight="700" font-family="sans-serif" fill="#111827">{}</text>"##,
+        safe_code(code)
+    );
+    raw_svg("0 0 40 38", "h-10 w-10", format!("Origin: {}", model::origin_label(code)), inner)
+}
+
+fn canopy_icon(code: &str) -> impl IntoView + use<> {
+    let inner = format!(
+        r##"<circle cx="20" cy="20" r="17.5" fill="#E8799A" stroke="#111827" stroke-width="2.5"/><path d="M8 26a14 14 0 0 0 22 4" stroke="#D45C80" stroke-width="3" fill="none" stroke-linecap="round"/><text x="20" y="24" text-anchor="middle" font-size="11" font-weight="700" font-family="sans-serif" fill="#111827">{}</text>"##,
+        safe_code(code)
+    );
+    raw_svg("0 0 40 40", "h-11 w-11", format!("Canopy shape: {}", model::canopy_label(code)), inner)
+}
+
+/// Bottom strip inside a bracket frame (rounded border, open in the middle of each side).
+fn icon_strip(s: &Species) -> impl IntoView + use<> {
+    view! {
+        <div class="relative mt-auto border-[3px] border-gray-900 rounded-xl px-2 py-1.5 flex items-center justify-around">
+            <span class="absolute -left-[3px] top-1/4 bottom-1/4 w-[3px] bg-white"></span>
+            <span class="absolute -right-[3px] top-1/4 bottom-1/4 w-[3px] bg-white"></span>
+            {flower_icon(&s.flower_color)}
+            {life_form_icon(&s.life_form, "h-11 w-11")}
+            {iucn_icon(&s.iucn_status)}
+            {origin_icon(&s.origin)}
+            {canopy_icon(&s.canopy_shape)}
+        </div>
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Badges shared with the list and the detail sheet
+// ---------------------------------------------------------------------------
+
+/// Yellow arrow tag with the functional-group number (gray "–" without a group).
+pub(super) fn group_tag(group: Option<u8>) -> impl IntoView + use<> {
+    let (fill, text, title) = match group {
+        Some(g) => ("#FCD116", g.to_string(), format!("Functional group {g}")),
+        None => ("#E5E7EB", "–".to_string(), "No functional group assigned".to_string()),
+    };
+    view! {
+        <span class="relative inline-flex h-8 w-14 shrink-0 items-center" title=title>
+            <svg xmlns="http://www.w3.org/2000/svg" class="absolute inset-0 h-full w-full" viewBox="0 0 56 32" preserveAspectRatio="none">
+                <path d="M3 1.5h40l11 14.5-11 14.5H3A1.5 1.5 0 0 1 1.5 29V3A1.5 1.5 0 0 1 3 1.5z" fill=fill stroke="#111827" stroke-width="1.5" />
+            </svg>
+            <span class="relative w-11 text-center text-lg font-medium text-gray-900">{text}</span>
+        </span>
+    }
+}
+
+pub(super) fn iucn_badge(code: &str) -> impl IntoView + use<> {
+    let (label, _, desc) = model::iucn_info(code);
+    let (bg, fg) = model::iucn_colors(code);
+    view! {
+        <span
+            class="inline-flex items-center px-2 py-0.5 rounded text-xs font-semibold border border-gray-300"
+            style=format!("background:{bg};color:{fg}")
+            title=desc
+        >
+            {format!("{code} · {label}")}
+        </span>
     }
 }
 
@@ -75,7 +172,7 @@ pub(super) fn flower_swatch(code: &str) -> impl IntoView + use<> {
         .find(|(c, ..)| *c == code)
         .unwrap_or(("NI", "No information", "border border-gray-400"));
     view! {
-        <span class="inline-flex items-center gap-1.5 text-xs text-gray-600" title="Flower color">
+        <span class="inline-flex items-center gap-1.5 text-sm text-gray-800" title="Flower color">
             <span class=format!("h-3 w-3 rounded-full {swatch}")></span>
             {label}
         </span>
@@ -83,11 +180,15 @@ pub(super) fn flower_swatch(code: &str) -> impl IntoView + use<> {
 }
 
 #[component]
-pub(super) fn BookmarkButton(id: i64, ctx: Ctx, #[prop(default = "text-primary-700")] color: &'static str) -> impl IntoView {
+pub(super) fn BookmarkButton(
+    id: i64,
+    ctx: Ctx,
+    #[prop(default = "p-1 rounded hover:bg-black/10 text-gray-700")] class: &'static str,
+) -> impl IntoView {
     let saved = move || ctx.is_saved(id);
     view! {
         <button
-            class=format!("p-1 rounded hover:bg-black/10 {color}")
+            class=class
             title=move || if saved() { "Remove from saved" } else { "Save species" }
             on:click=move |ev| {
                 ev.stop_propagation();
@@ -102,67 +203,66 @@ pub(super) fn BookmarkButton(id: i64, ctx: Ctx, #[prop(default = "text-primary-7
     }
 }
 
+/// Gray "image" placeholder from the template (no species photos in the API yet).
+pub(super) fn photo_placeholder() -> impl IntoView {
+    view! {
+        <svg xmlns="http://www.w3.org/2000/svg" class="h-28 w-28" viewBox="0 0 64 64" aria-hidden="true">
+            <rect x="14" y="4" width="36" height="56" rx="1.5" fill="#9AA0AB" />
+            <circle cx="24" cy="18" r="5" fill="#fff" />
+            <path d="M10 44l13-19 7 10 11-17 17 26z" fill="#fff" />
+        </svg>
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Card and table
+// ---------------------------------------------------------------------------
+
 #[component]
 pub(super) fn SpeciesCard(species: Arc<Species>, ctx: Ctx) -> impl IntoView {
     let s = species.clone();
     let open = move |_| ctx.selected.set(Some(species.clone()));
-    let has_group = s.functional_group.is_some();
+    let common = s.common_name().map(str::to_string);
+    let common_title = common.clone().unwrap_or_default();
 
     view! {
         <article
-            class="bg-white rounded-lg shadow hover:shadow-md transition-shadow cursor-pointer flex flex-col overflow-hidden"
+            class="bg-white rounded-lg shadow hover:shadow-lg hover:-translate-y-0.5 transition cursor-pointer flex flex-col gap-3 p-3"
             on:click=open
         >
-            <div class="bg-primary-50 px-4 py-3 flex items-start justify-between gap-2">
-                <div class="min-w-0">
-                    <h3 class="italic font-semibold text-primary-900 truncate" title=s.scientific_name.clone()>
-                        {s.scientific_name.clone()}
-                    </h3>
-                    <p class="text-xs text-gray-500 truncate">{format!("{} · {}", s.family(), s.genus.name)}</p>
-                </div>
-                <div class="flex items-center gap-1 shrink-0">
-                    {group_badge(s.group())}
-                    <BookmarkButton id=s.id ctx />
-                </div>
+            <div class=format!("{NAME_BAR} rounded flex items-center gap-2 pl-3")>
+                <h3
+                    class="flex-1 min-w-0 text-center text-lg font-bold text-gray-900 truncate py-1"
+                    title=common_title
+                >
+                    {common.unwrap_or_else(|| "—".into())}
+                </h3>
+                {group_tag(s.group())}
             </div>
 
-            <div class="px-4 py-3 flex items-center gap-3 border-b border-gray-100">
-                <div class="h-12 w-12 shrink-0 rounded-full bg-primary-100 text-primary-700 flex items-center justify-center">
-                    {life_form_icon(&s.life_form, "h-7 w-7")}
-                </div>
-                <div class="text-sm min-w-0">
-                    <div class="font-medium text-gray-800">{model::life_form_label(&s.life_form)}</div>
-                    <div class="text-gray-500 truncate">{if s.canopy_shape == "NI" {
-                        model::origin_label(&s.origin).to_string()
-                    } else {
-                        format!("{} · {} canopy", model::origin_label(&s.origin), model::canopy_label(&s.canopy_shape).to_lowercase())
-                    }}</div>
-                </div>
+            <div class="relative bg-[#DFE1E6] h-40 flex items-center justify-center">
+                {photo_placeholder()}
+                <BookmarkButton id=s.id ctx class="absolute top-2 right-2 p-1.5 rounded-full bg-white/80 hover:bg-white text-gray-800 shadow-sm" />
             </div>
 
-            <div class="px-4 py-3 flex-1 text-sm">
-                {if has_group {
-                    TRAITS
-                        .iter()
-                        .map(|(ty, label)| {
-                            view! {
-                                <div class="flex justify-between gap-2 py-0.5">
-                                    <span class="text-gray-500">{*label}</span>
-                                    <span class="font-medium text-gray-800 whitespace-nowrap">{s.trait_value(ty)}</span>
-                                </div>
-                            }
-                        })
-                        .collect_view()
-                        .into_any()
-                } else {
-                    view! { <p class="text-gray-400 italic">"No functional-group metrics"</p> }.into_any()
-                }}
+            <div class=format!("{SCI_BAR} rounded px-3 py-1")>
+                <h4 class="text-center text-lg font-semibold italic text-white truncate" title=s.scientific_name.clone()>
+                    {s.scientific_name.clone()}
+                </h4>
             </div>
 
-            <div class="px-4 py-2 border-t border-gray-100 flex items-center justify-between gap-2">
-                {iucn_badge(&s.iucn_status)}
-                {flower_swatch(&s.flower_color)}
-            </div>
+            <dl class="px-1 text-sm text-gray-900 space-y-1">
+                {TRAITS
+                    .iter()
+                    .map(|(ty, label)| {
+                        let v = s.trait_value(ty);
+                        let v = if v == "—" { "-".to_string() } else { v };
+                        view! { <div><dt class="inline">{format!("{label}: ")}</dt><dd class="inline font-medium">{v}</dd></div> }
+                    })
+                    .collect_view()}
+            </dl>
+
+            {icon_strip(&s)}
         </article>
     }
 }
@@ -174,13 +274,12 @@ pub(super) fn SpeciesTable(rows: Memo<Vec<Arc<Species>>>, ctx: Ctx) -> impl Into
             <table class="min-w-full divide-y divide-gray-200">
                 <thead class="bg-gray-50">
                     <tr>
+                        <th class=TH_SM>"Common name"</th>
                         <th class=TH_SM>"Scientific name"</th>
                         <th class=TH_SM>"Family"</th>
                         <th class=TH_SM>"Habit"</th>
-                        <th class=TH_SM>"Origin"</th>
                         <th class=TH_SM>"IUCN"</th>
                         <th class=TH_SM>"Group"</th>
-                        <th class=TH_SM>"Max height (m)"</th>
                         <th class=TH_SM><span class="sr-only">"Saved"</span></th>
                     </tr>
                 </thead>
@@ -191,14 +290,13 @@ pub(super) fn SpeciesTable(rows: Memo<Vec<Arc<Species>>>, ctx: Ctx) -> impl Into
                         children={move |s: Arc<Species>| {
                             let row = s.clone();
                             view! {
-                                <tr class="hover:bg-primary-50 cursor-pointer" on:click=move |_| ctx.selected.set(Some(row.clone()))>
-                                    <td class="px-4 py-2 whitespace-nowrap italic font-medium text-gray-900">{s.scientific_name.clone()}</td>
+                                <tr class="hover:bg-gray-50 cursor-pointer" on:click=move |_| ctx.selected.set(Some(row.clone()))>
+                                    <td class="px-4 py-2 whitespace-nowrap font-medium text-gray-900">{s.common_name().unwrap_or("—").to_string()}</td>
+                                    <td class="px-4 py-2 whitespace-nowrap italic text-gray-800">{s.scientific_name.clone()}</td>
                                     <td class="px-4 py-2 whitespace-nowrap text-sm text-gray-600">{s.family().to_string()}</td>
                                     <td class="px-4 py-2 whitespace-nowrap text-sm text-gray-600">{model::life_form_label(&s.life_form)}</td>
-                                    <td class="px-4 py-2 whitespace-nowrap text-sm text-gray-600">{model::origin_label(&s.origin)}</td>
                                     <td class="px-4 py-2 whitespace-nowrap">{iucn_badge(&s.iucn_status)}</td>
-                                    <td class="px-4 py-2 whitespace-nowrap">{group_badge(s.group())}</td>
-                                    <td class="px-4 py-2 whitespace-nowrap text-sm text-gray-600">{s.trait_value("HX")}</td>
+                                    <td class="px-4 py-2 whitespace-nowrap">{group_tag(s.group())}</td>
                                     <td class="px-4 py-2 whitespace-nowrap text-right"><BookmarkButton id=s.id ctx /></td>
                                 </tr>
                             }

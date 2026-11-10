@@ -21,6 +21,9 @@ pub struct Species {
     pub scientific_name: String,
     #[serde(default)]
     pub accepted_scientific_name: Option<String>,
+    /// Most frequent common name in the species' biodiversity records (annotated by the API).
+    #[serde(default)]
+    pub common_name: Option<String>,
     pub genus: Genus,
     #[serde(default)]
     pub functional_group: Option<FunctionalGroup>,
@@ -116,6 +119,10 @@ pub const TRAITS: [(&str, &str); 4] = [
 ];
 
 impl Species {
+    pub fn common_name(&self) -> Option<&str> {
+        self.common_name.as_deref().map(str::trim).filter(|n| !n.is_empty())
+    }
+
     pub fn family(&self) -> &str {
         &self.genus.family.name
     }
@@ -224,6 +231,37 @@ pub fn flower_label(code: &str) -> &'static str {
     FLOWER_COLORS.iter().find(|(c, _, _)| *c == code).map(|(_, l, _)| *l).unwrap_or("Unknown")
 }
 
+/// Card icon colors (fill, text) per flower color code.
+pub fn flower_fill(code: &str) -> (&'static str, &'static str) {
+    match code {
+        "WH" => ("#FFFFFF", "#14532D"),
+        "YE" => ("#FACC15", "#14532D"),
+        "PI" => ("#F9A8D4", "#14532D"),
+        "RE" => ("#EF4444", "#FFFFFF"),
+        "VI" => ("#8B5CF6", "#FFFFFF"),
+        "OR" => ("#FB923C", "#14532D"),
+        "FU" => ("#C026D3", "#FFFFFF"),
+        "BR" => ("#92400E", "#FFFFFF"),
+        "GR" => ("#4ADE80", "#14532D"),
+        _ => ("#E5E7EB", "#374151"),
+    }
+}
+
+/// IUCN Red List category colors (background, text).
+pub fn iucn_colors(code: &str) -> (&'static str, &'static str) {
+    match code {
+        "LC" => ("#11706B", "#FFFFFF"),
+        "NT" => ("#CCE226", "#111827"),
+        "CD" => ("#9BBF45", "#111827"),
+        "VU" => ("#F9E814", "#111827"),
+        "EN" => ("#FC7F3F", "#111827"),
+        "CR" => ("#D81E05", "#FFFFFF"),
+        "EW" => ("#542344", "#FFFFFF"),
+        "DD" => ("#D1D1C6", "#111827"),
+        _ => ("#FFFFFF", "#111827"),
+    }
+}
+
 pub fn iucn_info(code: &str) -> (&'static str, &'static str, &'static str) {
     IUCN.iter()
         .find(|(c, ..)| *c == code)
@@ -329,6 +367,7 @@ impl Filters {
         let sci = self.scientific_name.trim().to_lowercase();
         if !sci.is_empty() {
             let hit = s.scientific_name.to_lowercase().contains(&sci)
+                || s.common_name().is_some_and(|c| c.to_lowercase().contains(&sci))
                 || s.accepted_scientific_name
                     .as_deref()
                     .is_some_and(|a| a.to_lowercase().contains(&sci));

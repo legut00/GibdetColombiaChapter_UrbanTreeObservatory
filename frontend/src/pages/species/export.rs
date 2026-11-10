@@ -7,7 +7,7 @@ use wasm_bindgen::JsCast;
 use super::model::{self, Species, TRAITS};
 use crate::api::console_error;
 
-const HEADER: &str = "scientific_name,accepted_scientific_name,family,genus,life_form,origin,iucn_status,canopy_shape,flower_color,functional_group,carbon_sequestration_pct,shade_index,canopy_diameter_m,max_height_m,gbif_url";
+const HEADER: &str = "common_name,scientific_name,accepted_scientific_name,family,genus,life_form,origin,iucn_status,canopy_shape,flower_color,functional_group,carbon_sequestration_pct,shade_index,canopy_diameter_m,max_height_m,gbif_url";
 
 fn field(s: &str) -> String {
     if s.contains([',', '"', '\n', '\r']) {
@@ -22,6 +22,7 @@ pub fn to_csv(rows: &[Arc<Species>]) -> String {
     out.push_str("\r\n");
     for s in rows {
         let mut cols = vec![
+            s.common_name().unwrap_or_default().to_string(),
             s.scientific_name.clone(),
             s.accepted_scientific_name.clone().unwrap_or_default(),
             s.family().to_string(),
