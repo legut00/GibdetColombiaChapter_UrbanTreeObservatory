@@ -81,6 +81,8 @@ class SpeciesSerializer(serializers.ModelSerializer):
     functional_group = FunctionalGroupSerializer(read_only=True)
 
     scientific_name = serializers.CharField(read_only=True)
+    # Annotated by SpeciesViewSet (most frequent name in biodiversity records).
+    common_name = serializers.CharField(read_only=True, allow_null=True)
     gbif_url = serializers.URLField(read_only=True)
     tropical_plants_url = serializers.URLField(read_only=True)
 
@@ -108,6 +110,7 @@ class SpeciesSerializer(serializers.ModelSerializer):
             "name",
             "scientific_name",
             "accepted_scientific_name",
+            "common_name",
             "functional_group",
             "origin",
             "origin_display",
