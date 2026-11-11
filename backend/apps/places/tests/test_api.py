@@ -237,3 +237,55 @@ class TestSiteEndpoints:
         assert response.status_code == status.HTTP_200_OK
         assert len(response.data["results"]) == 1
         assert response.data["results"][0]["name"] == site.name
+
+
+@pytest.mark.django_db
+class TestTreeStatistics:
+    """Tree statistics per locality / neighborhood."""
+
+    @pytest.fixture
+    def trees(self, neighborhood, species):
+        from apps.biodiversity.factories import BiodiversityRecordFactory
+        from apps.places.factories import NeighborhoodFactory
+        from apps.reports.factories import MeasurementFactory
+        from apps.taxonomy.factories import SpeciesFactory
+
+        other_species = SpeciesFactory()
+        records = [
+            BiodiversityRecordFactory(neighborhood=neighborhood, species=species),
+            BiodiversityRecordFactory(neighborhood=neighborhood, species=species),
+            BiodiversityRecordFactory(neighborhood=neighborhood, species=other_species),
+        ]
+        for record, height in zip(records, [10.0, 20.0, 30.0]):
+            MeasurementFactory(biodiversity_record=record, attribute="HT", value=height, unit="m")
+            MeasurementFactory(biodiversity_record=record, attribute="DBH", value=99.0, unit="cm")
+        empty = NeighborhoodFactory(locality=neighborhood.locality)
+        return neighborhood, empty
+
+    def test_neighborhood_statistics(self, api_client, trees):
+        neighborhood, empty = trees
+        url = reverse("places:neighborhood-statistics")
+        response = api_client.get(url, {"locality": neighborhood.locality_id})
+
+        assert response.status_code == status.HTTP_200_OK
+        by_id = {r["id"]: r for r in response.data["results"]}
+        assert by_id[neighborhood.id] == {
+            "id": neighborhood.id,
+            "total_trees": 3,
+            "species_count": 2,
+            "avg_height_m": 20.0,
+        }
+        assert by_id[empty.id]["total_trees"] == 0
+        assert by_id[empty.id]["avg_height_m"] is None
+        assert response.data["overall"]["total_trees"] == 3
+
+    def test_locality_statistics(self, api_client, trees):
+        neighborhood, _ = trees
+        url = reverse("places:locality-statistics")
+        response = api_client.get(url)
+
+        assert response.status_code == status.HTTP_200_OK
+        by_id = {r["id"]: r for r in response.data["results"]}
+        assert by_id[neighborhood.locality_id]["total_trees"] == 3
+        assert by_id[neighborhood.locality_id]["species_count"] == 2
+

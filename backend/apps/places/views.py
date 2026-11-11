@@ -1,6 +1,8 @@
 from django_filters.rest_framework import DjangoFilterBackend
 from rest_framework import filters, viewsets
+from rest_framework.decorators import action
 from rest_framework.permissions import IsAuthenticatedOrReadOnly
+from rest_framework.response import Response
 
 from .models import Country, Department, Locality, Municipality, Neighborhood, Site
 from .serializers import (
@@ -16,6 +18,7 @@ from .serializers import (
     NeighborhoodSerializer,
     SiteSerializer,
 )
+from .statistics import statistics_response
 
 
 class CountryViewSet(viewsets.ReadOnlyModelViewSet):
@@ -123,6 +126,13 @@ class LocalityViewSet(viewsets.ReadOnlyModelViewSet):
             return LocalityGeoSerializer
         return LocalitySerializer
 
+    @action(detail=False, methods=["get"])
+    def statistics(self, request):
+        """Tree count, distinct species and average height for every locality (one
+        entry per locality, filters apply), plus city-wide totals under ``overall``."""
+        ids = self.filter_queryset(self.get_queryset()).values_list("id", flat=True)
+        return Response(statistics_response(list(ids), "neighborhood__locality_id"))
+
 
 class NeighborhoodViewSet(viewsets.ReadOnlyModelViewSet):
     """API endpoint for Neighborhood model."""
@@ -153,6 +163,13 @@ class NeighborhoodViewSet(viewsets.ReadOnlyModelViewSet):
         if format_param == "geojson":
             return NeighborhoodGeoSerializer
         return NeighborhoodSerializer
+
+    @action(detail=False, methods=["get"])
+    def statistics(self, request):
+        """Tree count, distinct species and average height for every neighborhood (one
+        entry per neighborhood, filters apply), plus city-wide totals under ``overall``."""
+        ids = self.filter_queryset(self.get_queryset()).values_list("id", flat=True)
+        return Response(statistics_response(list(ids), "neighborhood_id"))
 
 
 class SiteViewSet(viewsets.ReadOnlyModelViewSet):
