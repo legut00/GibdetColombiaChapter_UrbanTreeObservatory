@@ -1,5 +1,6 @@
 //! Map page: Leaflet map with zoom-dependent layers (comunas < 17, barrios 17-18,
-//! tree points >= 19) and a side panel with statistics.
+//! tree points >= 19) and a side panel with statistics. Clicking a tree point replaces the
+//! statistics with that tree's sheet (`tree_panel::TreePanel`) and highlights the point.
 //!
 //! KNOWN ISSUES (inherited behaviour, kept until decided; marked `KNOWN ISSUE:` below):
 //!  - 687 neighborhood requests fired up-front with all-or-nothing semantics (the DB has 710).
@@ -25,6 +26,8 @@ use crate::api::{API_BASE, console_error, get_json, js_or, js_string, truthy};
 use crate::interop::leaflet::{self as L, LMap, Layer};
 use crate::interop::{to_js, when_connected};
 
+use super::tree_panel::{TreePanel, TreeRecord};
+
 #[derive(Clone)]
 struct Region {
     name: String,
@@ -32,12 +35,32 @@ struct Region {
     environmental: Value,
 }
 
-#[derive(Clone)]
-struct SelectedTree {
-    common_name: String,
-    scientific_name: String,
-    life_form: String,
-    neighborhood: String,
+/// Tree point styles: normal and selected (larger, light green, drawn on top).
+const POINT_STYLE: &str = r##"{"radius": 5, "color": "#000000", "weight": 1, "fillColor": "#006400", "fillOpacity": 0.6}"##;
+const SELECTED_STYLE: &str = r##"{"color": "#14532D", "weight": 2, "fillColor": "#4ADE80", "fillOpacity": 1}"##;
+const SELECTED_RADIUS: f64 = 12.0;
+
+/// The highlighted point (record id + its Leaflet marker). Local storage: `Layer` is a JS
+/// object and not `Send`.
+type Highlight = StoredValue<Option<(i64, Layer)>, LocalStorage>;
+
+fn style(json_str: &str) -> JsValue {
+    to_js(&serde_json::from_str::<Value>(json_str).unwrap_or_default())
+}
+
+fn highlight(h: Highlight, id: i64, marker: &Layer) {
+    unhighlight(h);
+    marker.set_style(&style(SELECTED_STYLE));
+    marker.set_radius(SELECTED_RADIUS);
+    marker.bring_to_front();
+    h.set_value(Some((id, marker.clone())));
+}
+
+fn unhighlight(h: Highlight) {
+    if let Some((_, m)) = h.try_update_value(Option::take).flatten() {
+        m.set_style(&style(POINT_STYLE));
+        m.set_radius(5.0);
+    }
 }
 
 /// Manually tuned label positions per comuna id.
@@ -65,7 +88,8 @@ struct MapState {
     neighborhood_layer: Layer,
     locality_labels: Layer,
     selected_region: RwSignal<Region>,
-    selected_tree: RwSignal<Option<SelectedTree>>,
+    selected_tree: RwSignal<Option<TreeRecord>>,
+    highlight: Highlight,
 }
 
 #[component]
@@ -75,7 +99,15 @@ pub fn MapPage() -> impl IntoView {
         statistics: json!({ "totalTrees": 0, "speciesCount": 0, "avgHeight": 0, "healthIndex": 0 }),
         environmental: json!({ "co2Absorption": 0, "oxygenProduction": 0 }),
     });
-    let selected_tree = RwSignal::new(None::<SelectedTree>);
+    let selected_tree = RwSignal::new(None::<TreeRecord>);
+    let highlight: Highlight = StoredValue::new_local(None);
+
+    // Closing the tree sheet (or clicking a region) un-highlights the point.
+    Effect::new(move |_| {
+        if selected_tree.with(Option::is_none) {
+            unhighlight(highlight);
+        }
+    });
 
     // On client-side navigation leptos_router builds the route view asynchronously, so an
     // Effect can run before `<div id="map">` is attached to the document. Wait for the
@@ -85,7 +117,7 @@ pub fn MapPage() -> impl IntoView {
         if let Some(el) = map_ref.get() {
             let container: web_sys::HtmlElement = el.into();
             let c = container.clone();
-            when_connected(container, move || init_map(&c, selected_region, selected_tree));
+            when_connected(container, move || init_map(&c, selected_region, selected_tree, highlight));
         }
     });
 
@@ -97,61 +129,62 @@ pub fn MapPage() -> impl IntoView {
         move || selected_region.with(|r| js_or(&r.environmental[k], fb))
     };
 
+    // Region / city summary, shown while no tree is selected.
+    let summary = move || {
+        view! {
+            <div class="grid grid-cols-1 gap-6">
+                <div>
+                    <h2 class="text-2xl font-bold text-gray-800 mb-4">{name}</h2>
+                    <div class="space-y-4">
+                        <h3 class="text-lg font-semibold text-gray-700">"Tree Statistics"</h3>
+                        <div class="grid grid-cols-2 gap-x-8 gap-y-4">
+                            <div>
+                                <p class="text-2xl font-bold text-green-700">{stat("totalTrees", "101,283")}</p>
+                                <p class="text-sm text-gray-600">"Total Trees"</p>
+                            </div>
+                            <div>
+                                <p class="text-2xl font-bold text-green-700">{stat("speciesCount", "407")}</p>
+                                <p class="text-sm text-gray-600">"Species Count"</p>
+                            </div>
+                            <div>
+                                <p class="text-2xl font-bold text-green-700">{move || format!("{} m", stat("avgHeight", "17.30")())}</p>
+                                <p class="text-sm text-gray-600">"Average Height"</p>
+                            </div>
+                            <div>
+                                <p class="text-2xl font-bold text-green-700">{stat("healthIndex", "0.18")}</p>
+                                <p class="text-sm text-gray-600">"Tree-per-capita index"</p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <div>
+                    <h3 class="text-lg font-semibold text-gray-700 mb-4">"Environmental Impact"</h3>
+                    <div class="space-y-4">
+                        <div>
+                            <p class="text-2xl font-bold text-green-700">{move || format!("{} Ton", env("co2Absorption", "646,867.27")())}</p>
+                            <p class="text-sm text-gray-600">"CO₂ Absorption"</p>
+                        </div>
+                        <div>
+                            <p class="text-2xl font-bold text-green-700">{move || format!("{} Ton/year", env("oxygenProduction", "1,727,135.62")())}</p>
+                            <p class="text-sm text-gray-600">"Oxygen Production"</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        }
+    };
+
     view! {
         <div style="display: block; width: 100%; height: 100%;">
             <div class="flex flex-row h-full gap-4">
-                <div class="bg-white rounded-lg shadow-lg border border-gray-200 p-4 w-[16rem]">
-                    <div class="grid grid-cols-1 gap-6">
-                        <div>
-                            <h2 class="text-2xl font-bold text-gray-800 mb-4">{name}</h2>
-                            <div class="space-y-4">
-                                <h3 class="text-lg font-semibold text-gray-700">"Tree Statistics"</h3>
-                                <div class="grid grid-cols-2 gap-x-8 gap-y-4">
-                                    <div>
-                                        <p class="text-2xl font-bold text-green-700">{stat("totalTrees", "101,283")}</p>
-                                        <p class="text-sm text-gray-600">"Total Trees"</p>
-                                    </div>
-                                    <div>
-                                        <p class="text-2xl font-bold text-green-700">{stat("speciesCount", "407")}</p>
-                                        <p class="text-sm text-gray-600">"Species Count"</p>
-                                    </div>
-                                    <div>
-                                        <p class="text-2xl font-bold text-green-700">{move || format!("{} m", stat("avgHeight", "17.30")())}</p>
-                                        <p class="text-sm text-gray-600">"Average Height"</p>
-                                    </div>
-                                    <div>
-                                        <p class="text-2xl font-bold text-green-700">{stat("healthIndex", "0.18")}</p>
-                                        <p class="text-sm text-gray-600">"Tree-per-capita index"</p>
-                                    </div>
-                                </div>
-                            </div>
-                        </div>
-                        <div>
-                            <h3 class="text-lg font-semibold text-gray-700 mb-4">"Environmental Impact"</h3>
-                            <div class="space-y-4">
-                                <div>
-                                    <p class="text-2xl font-bold text-green-700">{move || format!("{} Ton", env("co2Absorption", "646,867.27")())}</p>
-                                    <p class="text-sm text-gray-600">"CO₂ Absorption"</p>
-                                </div>
-                                <div>
-                                    <p class="text-2xl font-bold text-green-700">{move || format!("{} Ton/year", env("oxygenProduction", "1,727,135.62")())}</p>
-                                    <p class="text-sm text-gray-600">"Oxygen Production"</p>
-                                </div>
-                            </div>
-                        </div>
-
-                        {move || selected_tree.get().map(|t| view! {
-                            <div class="mt-6 border-t pt-4">
-                                <h3 class="text-lg font-semibold text-gray-700 mb-4">"Selected Tree"</h3>
-                                <div class="space-y-2">
-                                    <p><span class="font-semibold text-gray-700">"Common Name:"</span> {format!(" {}", t.common_name)}</p>
-                                    <p><span class="font-semibold text-gray-700">"Scientific Name:"</span> " " <em>{t.scientific_name}</em></p>
-                                    <p><span class="font-semibold text-gray-700">"Life Form:"</span> {format!(" {}", t.life_form)}</p>
-                                    <p><span class="font-semibold text-gray-700">"Neighborhood:"</span> {format!(" {}", t.neighborhood)}</p>
-                                </div>
-                            </div>
-                        })}
-                    </div>
+                <div class="bg-white rounded-lg shadow-lg border border-gray-200 p-4 w-[16rem] shrink-0 overflow-y-auto">
+                    {move || match selected_tree.get() {
+                        Some(tree) => view! {
+                            <TreePanel tree on_close=Callback::new(move |_| selected_tree.set(None)) />
+                        }
+                        .into_any(),
+                        None => summary().into_any(),
+                    }}
                 </div>
                 <div node_ref=map_ref id="map" class="flex-1 rounded-lg shadow-lg border border-gray-200 min-h-[500px]"></div>
             </div>
@@ -182,7 +215,8 @@ fn event_target(e: &JsValue) -> Layer {
 fn init_map(
     container: &web_sys::HtmlElement,
     selected_region: RwSignal<Region>,
-    selected_tree: RwSignal<Option<SelectedTree>>,
+    selected_tree: RwSignal<Option<TreeRecord>>,
+    highlight: Highlight,
 ) {
     let map = match L::map(container) {
         Ok(map) => map,
@@ -210,6 +244,7 @@ fn init_map(
         locality_labels: L::layer_group(),
         selected_region,
         selected_tree,
+        highlight,
     });
 
     load_localities(st.clone());
@@ -362,6 +397,7 @@ fn on_each_locality(st: &Rc<MapState>, data: &Value, props: &Value, layer: Layer
             json!({ "co2Absorption": "N/A", "oxygenProduction": "N/A" })
         };
         st.selected_region.try_set(Region { name: comuna.clone(), statistics, environmental });
+        st.selected_tree.try_set(None);
     }));
 }
 
@@ -452,23 +488,29 @@ fn load_points_by_zoom(st: Rc<MapState>) {
             }
             let marker = L::circle_marker(
                 &to_js(&json!([record["latitude"], record["longitude"]])),
-                &to_js(&json!({
-                    "radius": 5,
-                    "color": "#000000",
-                    "weight": 1,
-                    "fillColor": "#006400",
-                    "fillOpacity": 0.6
-                })),
+                &style(POINT_STYLE),
             );
 
-            let tree = SelectedTree {
-                common_name: js_or(&record["common_name"], "N/A"),
-                scientific_name: js_or(&record["species"]["scientific_name"], "N/A"),
-                life_form: js_or(&record["species"]["life_form"], "N/A"),
-                neighborhood: js_or(&record["neighborhood"]["name"], "N/A"),
+            let Some(id) = record["id"].as_i64() else { continue };
+            let text = |v: &Value| v.as_str().map(str::trim).filter(|s| !s.is_empty()).map(str::to_string);
+            let tree = TreeRecord {
+                id,
+                common_name: text(&record["common_name"]),
+                scientific_name: text(&record["species"]["scientific_name"]).unwrap_or_else(|| "N/A".into()),
+                species_id: record["species"]["id"].as_i64(),
+                life_form: text(&record["species"]["life_form"]).unwrap_or_default(),
+                neighborhood: text(&record["neighborhood"]["name"]),
+                site: text(&record["site"]["name"]),
             };
-            let selected_tree = st.selected_tree;
+
+            // Points are rebuilt on every pan/zoom: keep the selected one highlighted.
+            if st.selected_tree.with_untracked(|t| t.as_ref().map(|t| t.id)) == Some(id) {
+                highlight(st.highlight, id, &marker);
+            }
+
+            let (selected_tree, h, m) = (st.selected_tree, st.highlight, marker.clone());
             marker.on("click", &js_fn1(move |_| {
+                highlight(h, id, &m);
                 selected_tree.try_set(Some(tree.clone()));
             }));
 

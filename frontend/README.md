@@ -45,7 +45,10 @@ src/
 └── pages/            one module per route (species/ = catalog: model, filters, cards, CSV)
 ```
 
-The **Map** and **Species** pages talk to the API. The other pages currently use hardcoded sample data.
+The **Map** and **Species** pages talk to the API. On the map (zoom ≥ 19), clicking a tree point replaces the
+statistics panel with that tree's sheet — common and scientific name, illustration, IUCN status,
+id, family, life form, DBH, total height, neighborhood, site and GBIF / Tropical Plants links — and
+highlights the point; "Back to summary" restores the statistics. The other pages currently use hardcoded sample data.
 
 ### Species catalog (`/species`)
 

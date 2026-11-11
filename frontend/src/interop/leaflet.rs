@@ -42,6 +42,10 @@ extern "C" {
     pub fn set_style(this: &Layer, style: &JsValue) -> Layer;
     #[wasm_bindgen(method)]
     pub fn on(this: &Layer, event: &str, f: &JsValue) -> Layer;
+    #[wasm_bindgen(method, js_name = setRadius)]
+    pub fn set_radius(this: &Layer, radius: f64) -> Layer;
+    #[wasm_bindgen(method, js_name = bringToFront)]
+    pub fn bring_to_front(this: &Layer) -> Layer;
 
     #[wasm_bindgen(js_namespace = L, js_name = tileLayer)]
     pub fn tile_layer(url: &str, options: &JsValue) -> Layer;

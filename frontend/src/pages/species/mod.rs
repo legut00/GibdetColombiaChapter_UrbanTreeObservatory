@@ -3,10 +3,10 @@
 //! Everything is downloaded once and filtered client-side. Bookmarks ("saved" species) live in
 //! `localStorage`, so they are per browser and are not sent to the backend.
 
-mod card;
+pub(crate) mod card;
 mod export;
 mod modal;
-mod model;
+pub(crate) mod model;
 mod sidebar;
 
 use std::collections::HashSet;
@@ -44,7 +44,7 @@ enum Load {
 
 /// State shared by the catalog's components.
 #[derive(Clone, Copy)]
-pub(super) struct Ctx {
+pub(crate) struct Ctx {
     pub filters: RwSignal<Filters>,
     pub saved: RwSignal<HashSet<i64>>,
     pub selected: RwSignal<Option<Arc<Species>>>,

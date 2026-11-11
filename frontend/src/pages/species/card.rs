@@ -17,7 +17,7 @@ const TH_SM: &str = "px-4 py-3 text-left text-xs font-medium text-gray-500 upper
 pub(super) const NAME_BAR: &str = "bg-[#CBC3A3]";
 pub(super) const SCI_BAR: &str = "bg-[#4B525E]";
 /// Paper color of the illustrations, so `object-contain` letterboxing blends in.
-pub(super) const ILLUSTRATION_BG: &str = "bg-[#F8F1E1]";
+pub(crate) const ILLUSTRATION_BG: &str = "bg-[#F8F1E1]";
 
 pub(super) const ICON_BOOKMARK: &str = "M5 5a2 2 0 012-2h10a2 2 0 012 2v16l-7-3.5L5 21V5z";
 
@@ -207,7 +207,7 @@ pub(super) fn BookmarkButton(
 
 /// Square illustration fitted in a wider box. A blurred, zoomed copy of the same image fills
 /// the sides, so the letterboxing takes the paper color of each illustration.
-pub(super) fn illustration_img(src: String, scientific_name: &str) -> impl IntoView + use<> {
+pub(crate) fn illustration_img(src: String, scientific_name: &str) -> impl IntoView + use<> {
     view! {
         <img src=src.clone() alt="" aria-hidden="true" loading="lazy" decoding="async"
             class="absolute inset-0 h-full w-full object-cover scale-125 blur-xl" />
@@ -217,7 +217,7 @@ pub(super) fn illustration_img(src: String, scientific_name: &str) -> impl IntoV
 }
 
 /// Gray "image" placeholder from the template (no species photos in the API yet).
-pub(super) fn photo_placeholder() -> impl IntoView {
+pub(crate) fn photo_placeholder() -> impl IntoView {
     view! {
         <svg xmlns="http://www.w3.org/2000/svg" class="h-28 w-28" viewBox="0 0 64 64" aria-hidden="true">
             <rect x="14" y="4" width="36" height="56" rx="1.5" fill="#9AA0AB" />

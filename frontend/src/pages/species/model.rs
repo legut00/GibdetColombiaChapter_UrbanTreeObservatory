@@ -187,7 +187,7 @@ impl Species {
     }
 }
 
-fn fmt_num(v: f64) -> String {
+pub fn fmt_num(v: f64) -> String {
     let s = format!("{v:.2}");
     s.trim_end_matches('0').trim_end_matches('.').to_string()
 }
