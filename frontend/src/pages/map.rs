@@ -6,12 +6,13 @@
 //!  - 687 neighborhood requests fired up-front with all-or-nothing semantics (the DB has 710).
 //!  - points are requested on both `zoomend` and `moveend` (double request on zoom), with no
 //!    cancellation of in-flight requests.
-//!  - panel fallbacks use JS `||`, so 0 / missing stats show the hardcoded city-wide numbers
-//!    (the API currently returns no `statistics`).
+//!  - panel fallbacks use JS `||`, so missing stats show hardcoded city-wide numbers. Tree
+//!    count, species count and average height now come from `/places/*/statistics/`; the
+//!    tree-per-capita index and the environmental figures are still placeholders.
 //!  - no cleanup of the Leaflet map / listeners when leaving the route.
 
 use std::cell::RefCell;
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::rc::Rc;
 
 use futures::future::try_join_all;
@@ -63,6 +64,66 @@ fn unhighlight(h: Highlight) {
     }
 }
 
+// ---------------------------------------------------------------------------
+// Tree statistics (count, species, average height) per comuna / barrio
+// ---------------------------------------------------------------------------
+
+const OVERVIEW: &str = "Ibagué Overview";
+
+/// `1234567` -> `"1,234,567"`.
+fn fmt_thousands(n: i64) -> String {
+    let s = n.abs().to_string();
+    let mut out = String::new();
+    for (i, c) in s.chars().enumerate() {
+        if i > 0 && (s.len() - i).is_multiple_of(3) {
+            out.push(',');
+        }
+        out.push(c);
+    }
+    if n < 0 { format!("-{out}") } else { out }
+}
+
+/// API entry -> the panel's `statistics` shape. Only the three computed metrics are set;
+/// `healthIndex` keeps its previous placeholder (`fallback_health`).
+fn panel_stats(s: &Value, fallback_health: Value) -> Value {
+    json!({
+        "totalTrees": fmt_thousands(s["total_trees"].as_i64().unwrap_or(0)),
+        "speciesCount": s["species_count"].as_i64().unwrap_or(0).to_string(),
+        "avgHeight": s["avg_height_m"].as_f64().map(|h| format!("{h:.2}")).unwrap_or_else(|| "N/A".into()),
+        "healthIndex": fallback_health,
+    })
+}
+
+/// `{id: panel statistics}` + city-wide totals from `/places/<kind>/statistics/`.
+/// Failures are logged and leave the map without counts (labels then read "N/A").
+async fn load_statistics(kind: &str) -> (HashMap<i64, Value>, Option<Value>) {
+    let url = format!("{API_BASE}/api/v1/places/{kind}/statistics/");
+    match get_json(&url).await {
+        Ok(data) => {
+            let by_id = data["results"]
+                .as_array()
+                .into_iter()
+                .flatten()
+                .filter_map(|r| Some((r["id"].as_i64()?, panel_stats(r, json!("N/A")))))
+                .collect();
+            (by_id, data.get("overall").cloned())
+        }
+        Err(e) => {
+            console_error(&format!("Error loading {kind} statistics:"), &e);
+            (HashMap::new(), None)
+        }
+    }
+}
+
+/// `"8.14" + "m"` -> `"8.14 m"`; `"N/A"` stays without a unit.
+fn with_unit(value: String, unit: &str) -> String {
+    if value == "N/A" { value } else { format!("{value} {unit}") }
+}
+
+fn escape_html(s: &str) -> String {
+    s.replace('&', "&amp;").replace('<', "&lt;").replace('>', "&gt;")
+}
+
 /// Manually tuned label positions per comuna id.
 fn comuna_coords(id: i64) -> Option<(f64, f64)> {
     match id {
@@ -87,6 +148,7 @@ struct MapState {
     locality_layer: Layer,
     neighborhood_layer: Layer,
     locality_labels: Layer,
+    neighborhood_labels: Layer,
     selected_region: RwSignal<Region>,
     selected_tree: RwSignal<Option<TreeRecord>>,
     highlight: Highlight,
@@ -95,7 +157,7 @@ struct MapState {
 #[component]
 pub fn MapPage() -> impl IntoView {
     let selected_region = RwSignal::new(Region {
-        name: "Ibagué Overview".into(),
+        name: OVERVIEW.into(),
         statistics: json!({ "totalTrees": 0, "speciesCount": 0, "avgHeight": 0, "healthIndex": 0 }),
         environmental: json!({ "co2Absorption": 0, "oxygenProduction": 0 }),
     });
@@ -147,7 +209,7 @@ pub fn MapPage() -> impl IntoView {
                                 <p class="text-sm text-gray-600">"Species Count"</p>
                             </div>
                             <div>
-                                <p class="text-2xl font-bold text-green-700">{move || format!("{} m", stat("avgHeight", "17.30")())}</p>
+                                <p class="text-2xl font-bold text-green-700">{move || with_unit(stat("avgHeight", "17.30")(), "m")}</p>
                                 <p class="text-sm text-gray-600">"Average Height"</p>
                             </div>
                             <div>
@@ -161,11 +223,11 @@ pub fn MapPage() -> impl IntoView {
                     <h3 class="text-lg font-semibold text-gray-700 mb-4">"Environmental Impact"</h3>
                     <div class="space-y-4">
                         <div>
-                            <p class="text-2xl font-bold text-green-700">{move || format!("{} Ton", env("co2Absorption", "646,867.27")())}</p>
+                            <p class="text-2xl font-bold text-green-700">{move || with_unit(env("co2Absorption", "646,867.27")(), "Ton")}</p>
                             <p class="text-sm text-gray-600">"CO₂ Absorption"</p>
                         </div>
                         <div>
-                            <p class="text-2xl font-bold text-green-700">{move || format!("{} Ton/year", env("oxygenProduction", "1,727,135.62")())}</p>
+                            <p class="text-2xl font-bold text-green-700">{move || with_unit(env("oxygenProduction", "1,727,135.62")(), "Ton/year")}</p>
                             <p class="text-sm text-gray-600">"Oxygen Production"</p>
                         </div>
                     </div>
@@ -245,6 +307,7 @@ fn init_map(
         locality_layer: L::feature_group(),
         neighborhood_layer: L::feature_group(),
         locality_labels: L::layer_group(),
+        neighborhood_labels: L::layer_group(),
         selected_region,
         selected_tree,
         highlight,
@@ -276,7 +339,20 @@ fn load_localities(st: Rc<MapState>) {
             .map(|id| format!("{API_BASE}/api/v1/places/localities/{id}/"))
             .collect::<Vec<_>>();
         // KNOWN ISSUE: all-or-nothing, one failed request discards every comuna.
-        let result = try_join_all(requests.iter().map(|u| get_json(u))).await;
+        let (result, (stats, overall)) = futures::join!(
+            try_join_all(requests.iter().map(|u| get_json(u))),
+            load_statistics("localities"),
+        );
+
+        // City-wide totals for the default panel (only while it is still showing).
+        if let Some(overall) = overall {
+            st.selected_region.try_update(|r| {
+                if r.name == OVERVIEW {
+                    // healthIndex 0 keeps the panel's tree-per-capita placeholder.
+                    r.statistics = panel_stats(&overall, json!(0));
+                }
+            });
+        }
 
         let responses = match result {
             Ok(r) => r,
@@ -296,7 +372,10 @@ fn load_localities(st: Rc<MapState>) {
             } else {
                 format!("Comuna {}", js_string(data.get("id")))
             };
-            let statistics = if truthy(&data["statistics"]) { data["statistics"].clone() } else { json!({}) };
+            let statistics = data["id"]
+                .as_i64()
+                .and_then(|id| stats.get(&id).cloned())
+                .unwrap_or_else(|| json!({}));
             let environmental = if truthy(&data["environmental"]) { data["environmental"].clone() } else { json!({}) };
 
             let feature = json!({
@@ -410,7 +489,11 @@ fn load_neighborhoods(st: Rc<MapState>) {
         let requests = (1..=687)
             .map(|id| format!("{API_BASE}/api/v1/places/neighborhoods/{id}/"))
             .collect::<Vec<_>>();
-        let responses = match try_join_all(requests.iter().map(|u| get_json(u))).await {
+        let (responses, (stats, _)) = futures::join!(
+            try_join_all(requests.iter().map(|u| get_json(u))),
+            load_statistics("neighborhoods"),
+        );
+        let responses = match responses {
             Ok(r) => r,
             Err(e) => return console_error("Error loading neighborhoods:", &e),
         };
@@ -424,6 +507,7 @@ fn load_neighborhoods(st: Rc<MapState>) {
             } else {
                 format!("Barrio {}", js_string(data.get("id")))
             };
+            let statistics = data["id"].as_i64().and_then(|id| stats.get(&id).cloned());
             let feature = json!({
                 "type": "Feature",
                 "geometry": data["boundary"],
@@ -436,8 +520,56 @@ fn load_neighborhoods(st: Rc<MapState>) {
                 })),
             );
             geo_layer.add_to(&st.neighborhood_layer);
+            add_neighborhood_label(&st, &geo_layer, &name, statistics.as_ref());
+            on_neighborhood_events(&st, &geo_layer, name, statistics);
         }
     });
+}
+
+/// "Name / tree count" label at the barrio's center (shown with the barrios, zoom 17-18).
+fn add_neighborhood_label(st: &MapState, layer: &Layer, name: &str, statistics: Option<&Value>) {
+    let bounds = layer.get_bounds();
+    if !bounds.is_valid() {
+        return;
+    }
+    let count = statistics.map(|s| js_or(&s["totalTrees"], "N/A")).unwrap_or_else(|| "N/A".into());
+    let icon = L::div_icon(&to_js(&json!({
+        "className": "region-label neighborhood-label",
+        "html": format!(
+            r#"<div class="label-content"><div class="region-name">{}</div><div class="statistics">{}</div></div>"#,
+            escape_html(name),
+            count
+        ),
+        "iconSize": [160, 40],
+        "iconAnchor": [80, 20]
+    })));
+    let marker_opts = Object::new();
+    set(&marker_opts, "icon", &icon);
+    set(&marker_opts, "interactive", &JsValue::FALSE);
+    st.neighborhood_labels.add_child(&L::marker(&bounds.get_center(), &marker_opts));
+}
+
+/// Hover highlight; click shows the barrio's statistics in the side panel.
+fn on_neighborhood_events(st: &Rc<MapState>, layer: &Layer, name: String, statistics: Option<Value>) {
+    layer.on("mouseover", &js_fn1(|e| {
+        event_target(&e).set_style(&to_js(&json!({ "fillOpacity": 0.5 })));
+    }));
+    layer.on("mouseout", &js_fn1(|e| {
+        event_target(&e).set_style(&to_js(&json!({ "fillOpacity": 0.3 })));
+    }));
+
+    let (region, tree) = (st.selected_region, st.selected_tree);
+    layer.on("click", &js_fn1(move |_| {
+        let statistics = statistics.clone().unwrap_or_else(|| {
+            json!({ "totalTrees": "N/A", "speciesCount": "N/A", "avgHeight": "N/A", "healthIndex": "N/A" })
+        });
+        region.try_set(Region {
+            name: name.clone(),
+            statistics,
+            environmental: json!({ "co2Absorption": "N/A", "oxygenProduction": "N/A" }),
+        });
+        tree.try_set(None);
+    }));
 }
 
 fn toggle_layers_by_zoom(st: &MapState) {
@@ -446,14 +578,17 @@ fn toggle_layers_by_zoom(st: &MapState) {
         st.map.remove_layer(&st.locality_layer);
         st.map.remove_layer(&st.locality_labels);
         st.map.remove_layer(&st.neighborhood_layer);
+        st.map.remove_layer(&st.neighborhood_labels);
     } else if zoom >= 17.0 {
         st.map.add_layer(&st.neighborhood_layer);
+        st.map.add_layer(&st.neighborhood_labels);
         st.map.remove_layer(&st.locality_layer);
         st.map.remove_layer(&st.locality_labels);
     } else {
         st.map.add_layer(&st.locality_layer);
         st.map.add_layer(&st.locality_labels);
         st.map.remove_layer(&st.neighborhood_layer);
+        st.map.remove_layer(&st.neighborhood_labels);
     }
 }
 
@@ -522,4 +657,28 @@ fn load_points_by_zoom(st: Rc<MapState>) {
 
         st.point_layer.add_to(&st.map);
     });
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn thousands_separator() {
+        assert_eq!(fmt_thousands(0), "0");
+        assert_eq!(fmt_thousands(936), "936");
+        assert_eq!(fmt_thousands(6646), "6,646");
+        assert_eq!(fmt_thousands(101228), "101,228");
+        assert_eq!(fmt_thousands(1234567), "1,234,567");
+    }
+
+    #[test]
+    fn panel_stats_shape() {
+        let s = panel_stats(&json!({"total_trees": 7759, "species_count": 240, "avg_height_m": 8.1}), json!("N/A"));
+        assert_eq!(s["totalTrees"], "7,759");
+        assert_eq!(s["speciesCount"], "240");
+        assert_eq!(s["avgHeight"], "8.10");
+        let empty = panel_stats(&json!({"total_trees": 0, "species_count": 0, "avg_height_m": null}), json!("N/A"));
+        assert_eq!(empty["avgHeight"], "N/A");
+    }
 }

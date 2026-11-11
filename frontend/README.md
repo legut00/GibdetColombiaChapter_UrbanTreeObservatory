@@ -48,7 +48,9 @@ src/
 The **Map** and **Species** pages talk to the API. On the map (zoom ≥ 19), clicking a tree point replaces the
 statistics panel with that tree's sheet — common and scientific name, illustration, IUCN status,
 id, family, life form, DBH, total height, neighborhood, site and GBIF / Tropical Plants links — and
-highlights the point; "Back to summary" restores the statistics. The other pages currently use hardcoded sample data.
+highlights the point; "Back to summary" restores the statistics. Comuna labels (zoom < 17) and barrio labels (zoom
+17–18) show each area's tree count; clicking one shows its trees, distinct species and average
+height in the panel. The other pages currently use hardcoded sample data.
 
 ### Species catalog (`/species`)
 
@@ -71,8 +73,9 @@ code with `KNOWN ISSUE:`. Main ones:
 - Map: 687 neighborhood requests are sent up front, and a single failure discards all of them.
   The database has 710 neighborhoods.
 - Map: tree points are requested twice on every zoom, and in-flight requests are never cancelled.
-- Map: the side panel falls back to hardcoded city-wide figures, because the API returns no
-  `statistics`.
+- Map: the tree-per-capita index and the environmental figures (CO₂, oxygen) are still
+  placeholders. Tree count, species count and average height are real
+  (`/api/v1/places/{localities,neighborhoods}/statistics/`).
 - Toggling the sidebar does not resize the map.
 - Dashboard and Analytics: all figures are sample data. Charts are never destroyed when leaving
   the page.
