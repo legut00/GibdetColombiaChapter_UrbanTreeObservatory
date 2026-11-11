@@ -18,6 +18,7 @@ use serde_json::{Value, json};
 use crate::api::{API_BASE, console_error, fmt_thousands, get_json};
 use crate::interop::chart::chart_by_id;
 use crate::interop::when_connected;
+use super::shared::{HEALTH, health_badge, health_label};
 
 // ---------------------------------------------------------------------------
 // API types
@@ -130,21 +131,8 @@ enum Load {
     Ready(std::sync::Arc<Summary>),
 }
 
-/// Phytosanitary status: (code, label, legend dot, chart color), in display order.
-const HEALTH: [(&str, &str, &str, &str); 5] = [
-    ("HE", "Healthy", "bg-green-500", "#10b981"),
-    ("SI", "Sick", "bg-yellow-500", "#f59e0b"),
-    ("CR", "Critical", "bg-red-500", "#ef4444"),
-    ("DE", "Dead", "bg-gray-700", "#374151"),
-    ("NR", "Not reported", "bg-gray-300", "#d1d5db"),
-];
-
 const CARD: &str = "bg-white rounded-lg shadow border border-gray-200 p-4";
 const TH: &str = "px-2 py-2 text-left text-xs font-medium text-gray-500 uppercase";
-
-fn health_label(code: &str) -> &'static str {
-    HEALTH.iter().find(|(c, ..)| *c == code).map(|(_, l, ..)| *l).unwrap_or("Unknown")
-}
 
 fn month_label(ym: &str) -> String {
     const MONTHS: [&str; 12] = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
@@ -434,13 +422,7 @@ fn records_section(s: &Summary) -> impl IntoView + use<> {
         .iter()
         .map(|t| {
             let status = t.phytosanitary_status.clone().unwrap_or_default();
-            let badge = match status.as_str() {
-                "HE" => "bg-green-100 text-green-800",
-                "SI" => "bg-yellow-100 text-yellow-800",
-                "CR" => "bg-red-100 text-red-800",
-                "DE" => "bg-gray-200 text-gray-800",
-                _ => "bg-gray-100 text-gray-600",
-            };
+            let badge = health_badge(&status);
             view! {
                 <tr>
                     <td class="px-2 py-2 text-sm">{t.id}</td>

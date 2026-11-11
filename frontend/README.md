@@ -42,7 +42,8 @@ src/
 ├── layout.rs         navbar + collapsible sidebar
 ├── api.rs            HTTP (gloo-net) + JS `||`/truthiness helpers
 ├── interop/          Leaflet & Chart.js bindings, `when_connected` DOM helper
-└── pages/            one module per route (species/ = catalog: model, filters, cards, CSV)
+└── pages/            one module per route (species/ = catalog: model, filters, cards, CSV;
+                      trees/ = inventory: list, detail, CSV export)
 ```
 
 The **Map** and **Species** pages talk to the API. On the map (zoom ≥ 19), clicking a tree point replaces the
@@ -50,7 +51,20 @@ statistics panel with that tree's sheet — common and scientific name, illustra
 id, family, life form, DBH, total height, neighborhood, site and GBIF / Tropical Plants links — and
 highlights the point; "Back to summary" restores the statistics. Comuna labels (zoom < 17) and barrio labels (zoom
 17–18) show each area's tree count; clicking one shows its trees, distinct species and average
-height in the panel. The other pages currently use hardcoded sample data.
+height in the panel. The **Dashboard** and **Trees** pages also use real data; Reports, Alerts
+and Analytics still use hardcoded sample data.
+
+### Tree inventory (`/trees`)
+
+Read-only query page over the census (`/api/v1/biodiversity/inventory/`, public). Adding,
+editing and deleting trees is done in the Django admin. Filters (applied server-side; text
+filters after a short pause in typing): ID, species (scientific or common name), family,
+neighborhood (all case-insensitive, partial match) and health status. 25 trees per page with
+latest total height, DBH and health. "View" opens the tree's full record: species, location,
+every measurement with its method and date (older ones listed as history) and all fields of the
+census observation (the cryptic form codes are shown as recorded). CSV export, built by the
+backend: "Export selected" (checkboxes, kept across pages and searches; POST with the ids) and
+"Export all / filtered" (every tree matching the filters, streamed; ~15 s for the whole census).
 
 ### Species catalog (`/species`)
 
