@@ -75,3 +75,16 @@ pub fn js_or(v: &Value, fallback: &str) -> String {
 pub fn console_error(msg: &str, err: &str) {
     web_sys::console::error_2(&msg.into(), &err.into());
 }
+
+/// `1234567` -> `"1,234,567"`.
+pub fn fmt_thousands(n: i64) -> String {
+    let s = n.abs().to_string();
+    let mut out = String::new();
+    for (i, c) in s.chars().enumerate() {
+        if i > 0 && (s.len() - i).is_multiple_of(3) {
+            out.push(',');
+        }
+        out.push(c);
+    }
+    if n < 0 { format!("-{out}") } else { out }
+}

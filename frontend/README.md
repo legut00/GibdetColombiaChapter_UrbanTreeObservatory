@@ -77,8 +77,11 @@ code with `KNOWN ISSUE:`. Main ones:
   placeholders. Tree count, species count and average height are real
   (`/api/v1/places/{localities,neighborhoods}/statistics/`).
 - Toggling the sidebar does not resize the map.
-- Dashboard and Analytics: all figures are sample data. Charts are never destroyed when leaving
-  the page.
+- Dashboard: real figures from `GET /api/v1/reports/dashboard/` (census, taxonomy, climate,
+  population 2019). CO₂ absorption and oxygen production show N/A: there is no model for them
+  yet. Temperature trends are one line per station (stations report in different periods).
+- Analytics: all figures are still sample data.
+- Dashboard and Analytics charts are never destroyed when leaving the page.
 
 ## Gotcha: DOM access after navigation
 

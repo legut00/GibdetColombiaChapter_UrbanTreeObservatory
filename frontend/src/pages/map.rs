@@ -23,7 +23,7 @@ use serde_json::{Value, json};
 use wasm_bindgen::prelude::*;
 use wasm_bindgen::JsCast;
 
-use crate::api::{API_BASE, console_error, get_json, js_or, js_string, truthy};
+use crate::api::{API_BASE, console_error, fmt_thousands, get_json, js_or, js_string, truthy};
 use crate::interop::leaflet::{self as L, LMap, Layer};
 use crate::interop::{to_js, when_connected};
 
@@ -69,19 +69,6 @@ fn unhighlight(h: Highlight) {
 // ---------------------------------------------------------------------------
 
 const OVERVIEW: &str = "Ibagué Overview";
-
-/// `1234567` -> `"1,234,567"`.
-fn fmt_thousands(n: i64) -> String {
-    let s = n.abs().to_string();
-    let mut out = String::new();
-    for (i, c) in s.chars().enumerate() {
-        if i > 0 && (s.len() - i).is_multiple_of(3) {
-            out.push(',');
-        }
-        out.push(c);
-    }
-    if n < 0 { format!("-{out}") } else { out }
-}
 
 /// API entry -> the panel's `statistics` shape. Only the three computed metrics are set;
 /// `healthIndex` keeps its previous placeholder (`fallback_health`).
