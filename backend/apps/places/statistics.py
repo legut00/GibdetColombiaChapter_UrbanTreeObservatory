@@ -10,7 +10,7 @@ def _round(value):
     return round(value, 2) if value is not None else None
 
 
-def tree_statistics(group_field=None):
+def tree_statistics(group_field=None, records_filter=None):
     """Return tree statistics grouped by a BiodiversityRecord field.
 
     ``group_field`` is a lookup from BiodiversityRecord, e.g. ``"neighborhood_id"`` or
@@ -18,11 +18,14 @@ def tree_statistics(group_field=None):
 
     Each entry has ``total_trees`` (records), ``species_count`` (distinct species) and
     ``avg_height_m`` (mean of the records' total-height measurements, ``None`` without any).
-    Two grouped queries, whatever the number of places.
+    Two grouped queries, whatever the number of places. ``records_filter`` (a dict of
+    BiodiversityRecord lookups) restricts the records, e.g. ``{"neighborhood_id__in": ids}``.
     """
-    records = BiodiversityRecord.objects.all()
+    records_filter = records_filter or {}
+    records = BiodiversityRecord.objects.filter(**records_filter)
     heights = Measurement.objects.filter(
-        attribute=Measurement.MeasuredAttribute.TOTAL_HEIGHT
+        attribute=Measurement.MeasuredAttribute.TOTAL_HEIGHT,
+        **{f"biodiversity_record__{k}": v for k, v in records_filter.items()},
     )
 
     if group_field is None:
@@ -37,9 +40,9 @@ def tree_statistics(group_field=None):
     )
     avgs = {
         row["key"]: row["avg"]
-        for row in heights.values(key=F(f"biodiversity_record__{group_field}")).annotate(
-            avg=Avg("value")
-        )
+        for row in heights.values(
+            key=F(f"biodiversity_record__{group_field}")
+        ).annotate(avg=Avg("value"))
     }
     return {
         row["key"]: {
