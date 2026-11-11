@@ -79,4 +79,7 @@ extern "C" {
     pub fn get_west(this: &LatLngBounds) -> f64;
     #[wasm_bindgen(method, js_name = getEast)]
     pub fn get_east(this: &LatLngBounds) -> f64;
+    /// Bounds extended by `ratio` of their size on every side.
+    #[wasm_bindgen(method)]
+    pub fn pad(this: &LatLngBounds, ratio: f64) -> LatLngBounds;
 }

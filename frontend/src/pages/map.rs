@@ -3,15 +3,16 @@
 //! statistics with that tree's sheet (`tree_panel::TreePanel`) and highlights the point.
 //!
 //! KNOWN ISSUES (inherited behaviour, kept until decided; marked `KNOWN ISSUE:` below):
-//!  - 687 neighborhood requests fired up-front with all-or-nothing semantics (the DB has 710).
-//!  - points are requested on both `zoomend` and `moveend` (double request on zoom), with no
-//!    cancellation of in-flight requests.
+//!
+//! Barrios (zoom 17-18) and tree points (zoom >= 19) are loaded for the visible area only,
+//! once per `moveend` (Leaflet also fires it after every zoom). Barrios are kept once drawn;
+//! points are replaced on every move and stale responses are dropped.
 //!  - panel fallbacks use JS `||`, so missing stats show hardcoded city-wide numbers. Tree
 //!    count, species count and average height now come from `/places/*/statistics/`; the
 //!    tree-per-capita index and the environmental figures are still placeholders.
 //!  - no cleanup of the Leaflet map / listeners when leaving the route.
 
-use std::cell::RefCell;
+use std::cell::{Cell, RefCell};
 use std::collections::{HashMap, HashSet};
 use std::rc::Rc;
 
@@ -136,6 +137,10 @@ struct MapState {
     neighborhood_layer: Layer,
     locality_labels: Layer,
     neighborhood_labels: Layer,
+    /// Barrios already drawn (sent as `exclude` so their geometry is not downloaded again).
+    loaded_neighborhoods: RefCell<HashSet<i64>>,
+    /// Sequence number of the latest point request; older responses are ignored.
+    point_seq: Cell<u64>,
     selected_region: RwSignal<Region>,
     selected_tree: RwSignal<Option<TreeRecord>>,
     highlight: Highlight,
@@ -295,28 +300,28 @@ fn init_map(
         neighborhood_layer: L::feature_group(),
         locality_labels: L::layer_group(),
         neighborhood_labels: L::layer_group(),
+        loaded_neighborhoods: RefCell::new(HashSet::new()),
+        point_seq: Cell::new(0),
         selected_region,
         selected_tree,
         highlight,
     });
 
     load_localities(st.clone());
-    load_neighborhoods(st.clone());
-    st.map.remove_layer(&st.neighborhood_layer);
 
     {
         let st = st.clone();
-        st.clone().map.on(
-            "zoomend",
-            &js_fn1(move |_| {
-                toggle_layers_by_zoom(&st);
-                load_points_by_zoom(st.clone());
-            }),
-        );
+        st.clone().map.on("zoomend", &js_fn1(move |_| toggle_layers_by_zoom(&st)));
     }
     {
         let st = st.clone();
-        st.clone().map.on("moveend", &js_fn1(move |_| load_points_by_zoom(st.clone())));
+        st.clone().map.on(
+            "moveend",
+            &js_fn1(move |_| {
+                load_neighborhoods_in_view(st.clone());
+                load_points_by_zoom(st.clone());
+            }),
+        );
     }
 }
 
@@ -470,34 +475,43 @@ fn on_each_locality(st: &Rc<MapState>, data: &Value, props: &Value, layer: Layer
     }));
 }
 
-fn load_neighborhoods(st: Rc<MapState>) {
+/// Fetch the barrios intersecting the visible area (plus a margin, so small pans need no
+/// request) that are not drawn yet, with their statistics, in one request.
+fn load_neighborhoods_in_view(st: Rc<MapState>) {
+    let zoom = st.map.get_zoom();
+    if !(17.0..19.0).contains(&zoom) {
+        return;
+    }
+    let b = st.map.get_bounds().pad(0.25);
+    let exclude = {
+        let mut ids: Vec<i64> = st.loaded_neighborhoods.borrow().iter().copied().collect();
+        ids.sort_unstable();
+        ids.iter().map(i64::to_string).collect::<Vec<_>>().join(",")
+    };
+    let url = format!(
+        "{API_BASE}/api/v1/places/neighborhoods/bbox/?min_lon={}&min_lat={}&max_lon={}&max_lat={}&exclude={exclude}",
+        b.get_west(),
+        b.get_south(),
+        b.get_east(),
+        b.get_north()
+    );
+
     spawn_local(async move {
-        // KNOWN ISSUE: 687 parallel requests, all-or-nothing.
-        let requests = (1..=687)
-            .map(|id| format!("{API_BASE}/api/v1/places/neighborhoods/{id}/"))
-            .collect::<Vec<_>>();
-        let (responses, (stats, _)) = futures::join!(
-            try_join_all(requests.iter().map(|u| get_json(u))),
-            load_statistics("neighborhoods"),
-        );
-        let responses = match responses {
-            Ok(r) => r,
+        let data = match get_json(&url).await {
+            Ok(d) => d,
             Err(e) => return console_error("Error loading neighborhoods:", &e),
         };
-
-        for data in responses {
-            if !truthy(&data["boundary"]["coordinates"]) {
+        for n in data["results"].as_array().into_iter().flatten() {
+            let Some(id) = n["id"].as_i64() else { continue };
+            // Two overlapping requests may both return a barrio: draw it once.
+            if !truthy(&n["boundary"]["coordinates"]) || !st.loaded_neighborhoods.borrow_mut().insert(id) {
                 continue;
             }
-            let name = if truthy(&data["name"]) {
-                js_string(Some(&data["name"]))
-            } else {
-                format!("Barrio {}", js_string(data.get("id")))
-            };
-            let statistics = data["id"].as_i64().and_then(|id| stats.get(&id).cloned());
+            let name = if truthy(&n["name"]) { js_string(Some(&n["name"])) } else { format!("Barrio {id}") };
+            let statistics = panel_stats(n, json!("N/A"));
             let feature = json!({
                 "type": "Feature",
-                "geometry": data["boundary"],
+                "geometry": n["boundary"],
                 "properties": { "name": name }
             });
             let geo_layer = L::geo_json(
@@ -507,8 +521,8 @@ fn load_neighborhoods(st: Rc<MapState>) {
                 })),
             );
             geo_layer.add_to(&st.neighborhood_layer);
-            add_neighborhood_label(&st, &geo_layer, &name, statistics.as_ref());
-            on_neighborhood_events(&st, &geo_layer, name, statistics);
+            add_neighborhood_label(&st, &geo_layer, &name, Some(&statistics));
+            on_neighborhood_events(&st, &geo_layer, name, Some(statistics));
         }
     });
 }
@@ -586,6 +600,8 @@ fn load_points_by_zoom(st: Rc<MapState>) {
         return;
     }
 
+    let seq = st.point_seq.get() + 1;
+    st.point_seq.set(seq);
     let b = st.map.get_bounds();
     let url = format!(
         "{API_BASE}/api/v1/biodiversity/records/bbox/?min_lon={}&min_lat={}&max_lon={}&max_lat={}",
@@ -600,6 +616,10 @@ fn load_points_by_zoom(st: Rc<MapState>) {
             Ok(d) => d,
             Err(e) => return console_error("Error loading points:", &e),
         };
+        // The map moved again while this request was in flight.
+        if st.point_seq.get() != seq || st.map.get_zoom() < 19.0 {
+            return;
+        }
 
         st.point_layer.clear_layers();
 

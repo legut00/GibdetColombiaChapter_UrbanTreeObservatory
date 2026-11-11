@@ -51,7 +51,9 @@ statistics panel with that tree's sheet — common and scientific name, illustra
 id, family, life form, DBH, total height, neighborhood, site and GBIF / Tropical Plants links — and
 highlights the point; "Back to summary" restores the statistics. Comuna labels (zoom < 17) and barrio labels (zoom
 17–18) show each area's tree count; clicking one shows its trees, distinct species and average
-height in the panel. The **Dashboard** and **Trees** pages also use real data; Reports, Alerts
+height in the panel. Barrios and tree points are loaded only for the visible area (one request per
+pan/zoom: `/places/neighborhoods/bbox/` with geometry + statistics, `/biodiversity/records/bbox/`);
+barrios already drawn are kept and sent as `exclude`, and stale point responses are dropped. The **Dashboard** and **Trees** pages also use real data; Reports, Alerts
 and Analytics still use hardcoded sample data.
 
 ### Tree inventory (`/trees`)
@@ -84,9 +86,6 @@ for the 168 species that have a group. Trait ranges are shown sorted, because so
 The current behaviour was carried over from the previous Angular frontend and is marked in the
 code with `KNOWN ISSUE:`. Main ones:
 
-- Map: 687 neighborhood requests are sent up front, and a single failure discards all of them.
-  The database has 710 neighborhoods.
-- Map: tree points are requested twice on every zoom, and in-flight requests are never cancelled.
 - Map: the tree-per-capita index and the environmental figures (CO₂, oxygen) are still
   placeholders. Tree count, species count and average height are real
   (`/api/v1/places/{localities,neighborhoods}/statistics/`).
