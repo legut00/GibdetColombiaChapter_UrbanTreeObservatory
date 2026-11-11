@@ -275,3 +275,45 @@ class TestObservationAPI:
         response = authenticated_client.get(url)
 
         assert response.status_code == status.HTTP_200_OK
+
+
+@pytest.mark.django_db
+class TestDashboardAPI:
+    """GET /api/v1/reports/dashboard/ aggregates census, taxonomy and climate data."""
+
+    def test_dashboard_summary(self, api_client, neighborhood, species):
+        import datetime
+
+        from apps.biodiversity.factories import BiodiversityRecordFactory
+        from apps.climate.factories import ClimateFactory
+        from apps.reports.factories import MeasurementFactory, ObservationFactory
+
+        neighborhood.locality.population_2019 = 100
+        neighborhood.locality.save()
+        for i, (height, status_code) in enumerate([(3.0, "HE"), (12.0, "HE"), (30.0, "SI")]):
+            record = BiodiversityRecordFactory(
+                neighborhood=neighborhood,
+                species=species,
+                date=datetime.date(2017, 1, 1 + i),
+            )
+            MeasurementFactory(biodiversity_record=record, attribute="HT", value=height, unit="m")
+            ObservationFactory(biodiversity_record=record, phytosanitary_status=status_code)
+        BiodiversityRecordFactory(neighborhood=neighborhood, species=species, date=datetime.date(1899, 1, 1))
+        ClimateFactory(date=datetime.date(2025, 4, 1), value=20.0)
+
+        response = api_client.get(reverse("reports:dashboard"))
+
+        assert response.status_code == status.HTTP_200_OK
+        data = response.data
+        assert data["overall"]["total_trees"] == 4
+        assert data["trees_per_capita"] == {"population": 100, "value": 0.04}
+        assert data["phytosanitary_status"] == {"HE": 2, "SI": 1}
+        assert data["top_species"][0]["count"] == 4
+        assert data["records_by_year"] == {"years": [{"year": 2017, "count": 3}], "invalid_dates": 1}
+        bins = {b["from_m"]: b["count"] for b in data["height_distribution"]}
+        assert (bins[0], bins[10], bins[25]) == (1, 1, 1)
+        temperature = data["monthly_temperature"]
+        assert temperature["months"] == ["2025-04"]
+        assert [s["values"] for s in temperature["stations"]] == [[20.0]]
+        assert data["recent_records"][0]["height_m"] == 30.0
+        assert data["recent_records"][0]["phytosanitary_status"] == "SI"
