@@ -224,12 +224,15 @@ fn init_map(
     };
     map.set_view(&to_js(&json!([4.4389, -75.2322])), 14.0);
 
+    // OSM publishes tiles up to zoom 19. `maxNativeZoom` makes Leaflet upscale the z19 tiles
+    // for zooms 20-23 (where the tree points are) instead of requesting tiles that do not
+    // exist. A tile that really fails to load is left empty.
     L::tile_layer(
         "https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png",
         &to_js(&json!({
             "maxZoom": 23,
+            "maxNativeZoom": 19,
             "attribution": "© OpenStreetMap contributors",
-            "errorTileUrl": "https://upload.wikimedia.org/wikipedia/commons/a/ac/No_image_available.svg",
             "keepBuffer": 10
         })),
     )
