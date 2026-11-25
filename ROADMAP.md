@@ -30,8 +30,11 @@ update the database from the Reports page with a file. Next:
 
 ## 3. Data and indicators
 
-- Real tree-per-capita index and environmental figures (CO₂, oxygen) in the map panel; they
-  are placeholders today (`KNOWN ISSUE` in `frontend/src/pages/map.rs`).
+- Real tree-per-capita index in the map panel; it is a placeholder today (`KNOWN ISSUE` in
+  `frontend/src/pages/map.rs`). The environmental figures are now the stored carbon and the
+  intercepted rain of each tree, barrio, comuna and the city.
+- Recompute the ecosystem services automatically after an upload or a study import (today:
+  `compute_ecosystem_services` by hand).
 - Cite the sources of the climate and population data on the About page.
 - Show "cultivated" species as their own origin group instead of "introduced", and translate
   the origin labels the API returns.

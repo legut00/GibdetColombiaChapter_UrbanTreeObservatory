@@ -17,8 +17,10 @@ def _services(row):
     t C and t CO2e, intercepted rain in m3/year (lower bound)."""
     carbon_t = (row.get("carbon") or 0) / 1000
     return {
-        "carbon_t": round(carbon_t, 1),
-        "carbon_co2e_t": round(carbon_t * CO2_PER_C, 1),
+        # Two decimals: the pages round to whole tonnes, and rounding twice shifts the
+        # last digit (77,191.48 -> 77,191.5 -> 77,192).
+        "carbon_t": round(carbon_t, 2),
+        "carbon_co2e_t": round(carbon_t * CO2_PER_C, 2),
         "rain_interception_m3": round(row.get("rain") or 0),
     }
 

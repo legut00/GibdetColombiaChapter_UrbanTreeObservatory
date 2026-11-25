@@ -342,6 +342,15 @@ fn health_and_campaigns(s: &Summary, l: Lang) -> impl IntoView + use<> {
     }
 }
 
+/// The census puts the trees without a barrio in a comuna named "Desconocida".
+fn comuna_label(name: &str, l: Lang) -> String {
+    if name.trim().eq_ignore_ascii_case("desconocida") {
+        pick(l, "Sin comuna (barrio sin asignar)", "No comuna (barrio not assigned)").to_string()
+    } else {
+        name.to_string()
+    }
+}
+
 fn impact_and_species(s: &Summary, l: Lang) -> impl IntoView + use<> {
     let localities = s
         .localities
@@ -349,7 +358,7 @@ fn impact_and_species(s: &Summary, l: Lang) -> impl IntoView + use<> {
         .map(|c| {
             view! {
                 <tr class="border-t border-gray-100">
-                    <td class="py-1">{c.name.clone()}</td>
+                    <td class="py-1">{comuna_label(&c.name, l)}</td>
                     <td class="py-1 text-right tabular-nums">{fmt_thousands(c.carbon_t.round() as i64)}</td>
                     <td class="py-1 text-right tabular-nums">{fmt_thousands(c.rain_interception_m3.round() as i64)}</td>
                 </tr>
@@ -405,8 +414,8 @@ fn impact_and_species(s: &Summary, l: Lang) -> impl IntoView + use<> {
                 </table>
                 <p class="mt-3 text-xs text-gray-400">
                     {pick(l,
-                        "Estimación árbol por árbol con el censo. Carbono: stock acumulado en la vida de los árboles (Chave et al. 2005, misma ecuación de Acuña et al. 2021 para Ibagué). Lluvia: lo que retienen las copas cada día de lluvia (2022, 2023 y 2025), sin la evaporación durante el aguacero; las mediciones en árboles aislados dan más. No incluye los árboles sin barrio asignado en la tabla por comuna.",
-                        "Tree-by-tree estimate from the census. Carbon: stock accumulated over the trees' lives (Chave et al. 2005, the same equation as Acuña et al. 2021 for Ibagué). Rain: what the crowns hold each rainy day (2022, 2023 and 2025), without evaporation during the storm; measurements on isolated trees give more. Trees without a barrio are not in the per-comuna table.")}
+                        "Estimación árbol por árbol con el censo. Carbono: stock acumulado en la vida de los árboles (Chave et al. 2005, misma ecuación de Acuña et al. 2021 para Ibagué). Lluvia: lo que retienen las copas cada día de lluvia (2022, 2023 y 2025), sin la evaporación durante el aguacero; las mediciones en árboles aislados dan más. En la tabla, «Sin comuna» reúne los árboles a los que el censo no asignó barrio.",
+                        "Tree-by-tree estimate from the census. Carbon: stock accumulated over the trees' lives (Chave et al. 2005, the same equation as Acuña et al. 2021 for Ibagué). Rain: what the crowns hold each rainy day (2022, 2023 and 2025), without evaporation during the storm; measurements on isolated trees give more. In the table, “No comuna” gathers the trees the census left without a barrio.")}
                 </p>
             </div>
 
@@ -695,5 +704,12 @@ mod tests {
     fn month_labels() {
         assert_eq!(month_label(Lang::En, "2025-04"), "Apr 25");
         assert_eq!(month_label(Lang::Es, "2024-12"), "Dic 24");
+    }
+
+    #[test]
+    fn unknown_comuna_is_named_for_what_it_is() {
+        assert_eq!(comuna_label("Desconocida", Lang::Es), "Sin comuna (barrio sin asignar)");
+        assert_eq!(comuna_label("DESCONOCIDA", Lang::En), "No comuna (barrio not assigned)");
+        assert_eq!(comuna_label("COMUNA 1", Lang::Es), "COMUNA 1");
     }
 }
