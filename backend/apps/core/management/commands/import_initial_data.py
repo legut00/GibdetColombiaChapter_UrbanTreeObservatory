@@ -54,7 +54,7 @@ from django.db import connection, transaction
 from tqdm import tqdm
 
 from apps.biodiversity.models import BiodiversityRecord
-from apps.climate.models import Climate, Station
+from apps.climate.models import Climate, Station, station_location
 from apps.places.models import Locality, Municipality, Neighborhood, Site
 from apps.reports.models import Measurement, Observation, refresh_latest
 from apps.taxonomy.models import (
@@ -1118,7 +1118,9 @@ class Command(BaseCommand):
             station = Station(
                 code=row.stationcode,
                 name=row.stationname,
-                location=Point(row.longitude, row.latitude, srid=4326),
+                location=station_location(
+                    row.stationcode, row.longitude, row.latitude
+                ),
                 municipality=self.ibague,
             )
             stations_batch.append(station)

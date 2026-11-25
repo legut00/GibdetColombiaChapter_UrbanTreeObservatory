@@ -1,9 +1,23 @@
 from django.contrib.gis.db import models as gis_models
+from django.contrib.gis.geos import Point
 from django.db import models
 from django.utils.translation import gettext_lazy as _
 
 from apps.core.models import BaseModel
 from apps.places.models import Municipality
+
+
+# Locations from the IDEAM station catalog (datos.gov.co, dataset hp9r-jxuu) that replace
+# rounded ones in the climate data: code -> (longitude, latitude).
+CATALOG_LOCATIONS = {
+    80214: (-75.13941667, 4.424138889),  # Aeropuerto Perales, IDEAM 21245040
+}
+
+
+def station_location(code, longitude, latitude):
+    """The station's point, from the IDEAM catalog when the source rounded it."""
+    lon, lat = CATALOG_LOCATIONS.get(code, (longitude, latitude))
+    return Point(lon, lat, srid=4326)
 
 
 class Station(models.Model):
