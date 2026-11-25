@@ -18,7 +18,9 @@ downloads.
 ## Features
 
 - **Map**: comunas, barrios and individual trees by zoom level; each tree opens its census
-  sheet. A toolbar queries trees by code, scientific or common name, comuna and barrio, and by
+  sheet. A home button returns to the city view, and a location button shows where the user
+  is (GPS on a phone) among the trees around them; browsers only share the location over
+  HTTPS (or on localhost). A toolbar queries trees by code, scientific or common name, comuna and barrio, and by
   an area of interest drawn on the map or loaded from a KML file; the result downloads as
   Excel, CSV or GeoJSON with every inventory column.
 - **Species catalog**: the census species with their habit, origin, IUCN status, flower color

@@ -38,6 +38,11 @@ extern "C" {
     pub fn create_pane(this: &LMap, name: &str) -> web_sys::HtmlElement;
     #[wasm_bindgen(method, js_name = getContainer)]
     pub fn get_container(this: &LMap) -> web_sys::HtmlElement;
+    /// Browser geolocation through Leaflet: fires `locationfound` / `locationerror`.
+    #[wasm_bindgen(method)]
+    pub fn locate(this: &LMap, options: &JsValue) -> LMap;
+    #[wasm_bindgen(method, js_name = stopLocate)]
+    pub fn stop_locate(this: &LMap) -> LMap;
 
     // ---- L.Control ----
     pub type Control;
@@ -81,6 +86,9 @@ extern "C" {
     pub fn marker(latlng: &JsValue, options: &JsValue) -> Layer;
     #[wasm_bindgen(js_namespace = L, js_name = circleMarker)]
     pub fn circle_marker(latlng: &JsValue, options: &JsValue) -> Layer;
+    /// A circle with its radius in metres (unlike `circleMarker`, in pixels).
+    #[wasm_bindgen(js_namespace = L, js_name = circle)]
+    pub fn circle(latlng: &JsValue, options: &JsValue) -> Layer;
     #[wasm_bindgen(js_namespace = L, js_name = divIcon)]
     pub fn div_icon(options: &JsValue) -> JsValue;
     #[wasm_bindgen(js_namespace = L, js_name = latLng)]

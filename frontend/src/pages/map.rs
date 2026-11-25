@@ -74,6 +74,61 @@ fn unhighlight(h: Highlight) {
 
 const OVERVIEW: &str = "Ibagué Overview";
 
+/// Initial view (the urban area), also the target of the "home" button.
+const HOME_CENTER: [f64; 2] = [4.4389, -75.2322];
+const HOME_ZOOM: f64 = 14.0;
+/// Zoom of a precise location fix: the tree points are drawn from zoom 19.
+const LOCATE_ZOOM: f64 = 19.0;
+/// A fix within this many metres (GPS) is precise enough to zoom in to the trees. A
+/// computer without GPS estimates its position from the network (Wi-Fi or IP), often
+/// kilometres away: then the map only shows the area where the user may be.
+const PRECISE_M: f64 = 100.0;
+
+/// How far the map went to the user: not yet, to an approximate area, to a precise fix.
+#[derive(Clone, Copy, PartialEq)]
+enum Centered {
+    No,
+    Approximate,
+    Precise,
+}
+
+/// The "my location" button: off, waiting for the first fix, following the user, or a
+/// geolocation error code (0 unsupported, 1 denied, 2 unavailable, 3 timeout).
+#[derive(Clone, Copy, Debug, PartialEq)]
+enum Locate {
+    Off,
+    Searching,
+    On,
+    Error(u8),
+}
+
+fn locate_error_text(code: u8, lang: Lang) -> &'static str {
+    match code {
+        0 => pick(
+            lang,
+            "Este navegador no puede dar la ubicación.",
+            "This browser cannot provide a location.",
+        ),
+        1 => pick(
+            lang,
+            "No hay permiso para usar tu ubicación: actívalo en el navegador (la página debe abrirse con https).",
+            "Location permission denied: allow it in the browser (the page must be opened with https).",
+        ),
+        3 => pick(
+            lang,
+            "La ubicación tardó demasiado; intenta de nuevo.",
+            "Finding your location took too long; try again.",
+        ),
+        _ => pick(
+            lang,
+            "No se pudo obtener tu ubicación.",
+            "Your location is not available.",
+        ),
+    }
+}
+
+/// API entry -> the panel's `statistics` shape. `healthIndex` keeps its previous
+/// placeholder (`fallback_health`); the rest is computed by the backend.
 /// API entry -> the panel's `statistics` shape. `healthIndex` keeps its previous
 /// placeholder (`fallback_health`); the rest is computed by the backend.
 fn panel_stats(s: &Value, fallback_health: Value) -> Value {
@@ -177,6 +232,14 @@ struct MapState {
     draft_layer: Layer,
     result_layer: Layer,
     result_renderer: JsValue,
+    /// City-wide panel statistics, restored by the "home" button.
+    home_stats: RefCell<Option<Value>>,
+    /// The user's position (pane `location`) and the state of the "my location" button.
+    location_layer: Layer,
+    locate: RwSignal<Locate>,
+    /// The map moves to the first fix and to the first precise one; then the dot follows
+    /// the user without moving the map.
+    centered_on_user: Cell<Centered>,
 }
 
 #[component]
@@ -191,6 +254,29 @@ pub fn MapPage() -> impl IntoView {
     // The Leaflet side, once created (for the Effects that draw the toolbar's state).
     let map_state: StoredValue<Option<Rc<MapState>>, LocalStorage> = StoredValue::new_local(None);
     let map_ready = RwSignal::new(false);
+    let locate = RwSignal::new(Locate::Off);
+    // A location error is shown for a few seconds.
+    Effect::new(move |_| {
+        if let Locate::Error(code) = locate.get() {
+            set_timeout(
+                move || {
+                    locate.try_update(|l| {
+                        if *l == Locate::Error(code) {
+                            *l = Locate::Off;
+                        }
+                    });
+                },
+                std::time::Duration::from_secs(8),
+            );
+        }
+    });
+
+    // Closing the tree sheet (or clicking a region) un-highlights the point.
+    Effect::new(move |_| {
+        if selected_tree.with(Option::is_none) {
+            unhighlight(highlight);
+        }
+    });
 
     // Closing the tree sheet (or clicking a region) un-highlights the point.
     Effect::new(move |_| {
@@ -208,7 +294,7 @@ pub fn MapPage() -> impl IntoView {
             let container: web_sys::HtmlElement = el.into();
             let c = container.clone();
             when_connected(container, move || {
-                if let Some(st) = init_map(&c, selected_region, selected_tree, highlight, tools) {
+                if let Some(st) = init_map(&c, selected_region, selected_tree, highlight, tools, locate) {
                     map_state.try_update_value(|s| *s = Some(st));
                     map_ready.try_set(true);
                 }
@@ -241,6 +327,13 @@ pub fn MapPage() -> impl IntoView {
     });
 
     let i = I18n::use_ctx();
+    let on_map = move |f: fn(&MapState)| {
+        map_state.with_value(|s| {
+            if let Some(s) = s {
+                f(s);
+            }
+        });
+    };
     let name = move || {
         let n = selected_region.with(|r| js_or(&json!(r.name), OVERVIEW));
         if n == OVERVIEW { i.t("Resumen de Ibagué", "Ibagué Overview").to_string() } else { n }
@@ -312,6 +405,49 @@ pub fn MapPage() -> impl IntoView {
                 </div>
                 <div class="relative flex-1 min-h-[500px]">
                     <div node_ref=map_ref id="map" class="absolute inset-0 rounded-lg shadow-lg border border-gray-200"></div>
+                    // Below Leaflet's zoom control (top left, 10 px margin, two 30 px buttons).
+                    <div class="absolute left-[11px] top-[85px] z-[1000] flex flex-col overflow-hidden rounded border-2 border-black/20 bg-clip-padding">
+                        <button
+                            type="button"
+                            class="flex h-[30px] w-[30px] items-center justify-center bg-white text-gray-800 hover:bg-gray-100"
+                            title=move || i.t("Volver a la vista inicial", "Back to the initial view")
+                            aria-label=move || i.t("Volver a la vista inicial", "Back to the initial view")
+                            on:click=move |_| on_map(go_home)
+                        >
+                            <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round">
+                                <path d="M3 11 12 3l9 8M5 9.5V21h5v-6h4v6h5V9.5" />
+                            </svg>
+                        </button>
+                        <button
+                            type="button"
+                            class=move || {
+                                let state = match locate.get() {
+                                    Locate::Searching => "animate-pulse text-blue-600",
+                                    Locate::On => "text-blue-600",
+                                    _ => "text-gray-800",
+                                };
+                                format!("flex h-[30px] w-[30px] items-center justify-center border-t border-gray-300 bg-white hover:bg-gray-100 {state}")
+                            }
+                            title=move || i.t("Mi ubicación", "My location")
+                            aria-label=move || i.t("Mi ubicación", "My location")
+                            aria-pressed=move || matches!(locate.get(), Locate::Searching | Locate::On).to_string()
+                            on:click=move |_| on_map(toggle_locate)
+                        >
+                            <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
+                                <circle cx="12" cy="12" r="7" />
+                                <circle cx="12" cy="12" r="2.5" fill="currentColor" />
+                                <path d="M12 2v3M12 19v3M2 12h3M19 12h3" />
+                            </svg>
+                        </button>
+                    </div>
+                    {move || match locate.get() {
+                        Locate::Error(code) => Some(view! {
+                            <div role="alert" class="absolute left-[52px] top-[85px] z-[1000] max-w-xs rounded border border-gray-200 bg-white px-3 py-2 text-sm text-gray-700 shadow">
+                                {locate_error_text(code, i.lang())}
+                            </div>
+                        }),
+                        _ => None,
+                    }}
                     <MapToolbar tools />
                 </div>
             </div>
@@ -345,6 +481,7 @@ fn init_map(
     selected_tree: RwSignal<Option<TreeRecord>>,
     highlight: Highlight,
     tools: ToolSignals,
+    locate: RwSignal<Locate>,
 ) -> Option<Rc<MapState>> {
     let map = match L::map(container) {
         Ok(map) => map,
@@ -353,7 +490,7 @@ fn init_map(
             return None;
         }
     };
-    map.set_view(&to_js(&json!([4.4389, -75.2322])), 14.0);
+    map.set_view(&to_js(&json!(HOME_CENTER)), HOME_ZOOM);
 
     // OSM publishes tiles up to zoom 19. `maxNativeZoom` makes Leaflet upscale the z19 tiles
     // for zooms 20-23 (where the tree points are) instead of requesting tiles that do not
@@ -371,7 +508,9 @@ fn init_map(
 
     // Above the comunas / barrios (overlayPane, 400) and below the markers (600). Not
     // clickable: clicks reach the layers underneath (and the map, while drawing).
-    for (pane, z) in [("zone", "440"), ("results", "450")] {
+    // The user's location goes above the tree points (markers, 600) and is not clickable
+    // either, so the trees under it can still be opened.
+    for (pane, z) in [("zone", "440"), ("results", "450"), ("location", "650")] {
         let style = map.create_pane(pane).style();
         let _ = style.set_property("z-index", z);
         let _ = style.set_property("pointer-events", "none");
@@ -379,7 +518,8 @@ fn init_map(
     let zone_layer = L::feature_group();
     let draft_layer = L::layer_group();
     let result_layer = L::layer_group();
-    for layer in [&zone_layer, &draft_layer, &result_layer] {
+    let location_layer = L::layer_group();
+    for layer in [&zone_layer, &draft_layer, &result_layer, &location_layer] {
         layer.add_to(&map);
     }
 
@@ -401,6 +541,10 @@ fn init_map(
         draft_layer,
         result_layer,
         result_renderer: L::canvas(&to_js(&json!({ "pane": "results" }))),
+        home_stats: RefCell::new(None),
+        location_layer,
+        locate,
+        centered_on_user: Cell::new(Centered::No),
     });
 
     load_localities(st.clone());
@@ -433,6 +577,32 @@ fn init_map(
     }
     {
         let st = st.clone();
+        st.clone()
+            .map
+            .on("locationfound", &js_fn1(move |e| show_location(&st, &e)));
+    }
+    {
+        let st = st.clone();
+        st.clone().map.on(
+            "locationerror",
+            &js_fn1(move |e| {
+                let code = Reflect::get(&e, &"code".into())
+                    .ok()
+                    .and_then(|v| v.as_f64())
+                    .unwrap_or(2.0) as u8;
+                // While following the user, a lost or late update (common when the
+                // device is still) keeps the last position; only a revoked permission
+                // stops it.
+                if matches!(st.locate.get_untracked(), Locate::On) && code != 1 {
+                    return;
+                }
+                stop_locating(&st);
+                st.locate.try_set(Locate::Error(code));
+            }),
+        );
+    }
+    {
+        let st = st.clone();
         st.clone().map.on(
             "moveend",
             &js_fn1(move |_| {
@@ -442,6 +612,87 @@ fn init_map(
         );
     }
     Some(st)
+}
+
+// ---------------------------------------------------------------------------
+// Home and "my location" buttons
+// ---------------------------------------------------------------------------
+
+/// Back to the initial view and the city summary.
+fn go_home(st: &MapState) {
+    st.map.set_view(&to_js(&json!(HOME_CENTER)), HOME_ZOOM);
+    st.selected_tree.set(None);
+    if let Some(stats) = st.home_stats.borrow().clone() {
+        st.selected_region.set(Region {
+            name: OVERVIEW.into(),
+            statistics: stats,
+        });
+    }
+}
+
+/// Start following the user's position (browser geolocation: GPS on a phone, Wi-Fi or IP
+/// on a computer), or stop it.
+fn toggle_locate(st: &MapState) {
+    if matches!(st.locate.get_untracked(), Locate::Searching | Locate::On) {
+        stop_locating(st);
+        st.locate.set(Locate::Off);
+    } else {
+        st.centered_on_user.set(Centered::No);
+        st.locate.set(Locate::Searching);
+        st.map.locate(&to_js(&json!({
+            "watch": true,
+            "setView": false,
+            "enableHighAccuracy": true,
+            "timeout": 20000,
+            "maximumAge": 10000
+        })));
+    }
+}
+
+fn stop_locating(st: &MapState) {
+    st.map.stop_locate();
+    st.location_layer.clear_layers();
+}
+
+/// A blue dot at the position and a circle of its accuracy; the first fix zooms in to
+/// the tree points around it.
+fn show_location(st: &MapState, e: &JsValue) {
+    if st.locate.get_untracked() == Locate::Off {
+        return; // stopped while the browser was still answering
+    }
+    let latlng = Reflect::get(e, &"latlng".into()).unwrap_or(JsValue::UNDEFINED);
+    let accuracy = Reflect::get(e, &"accuracy".into())
+        .ok()
+        .and_then(|v| v.as_f64())
+        .unwrap_or(0.0);
+    st.location_layer.clear_layers();
+    let area = L::circle(
+        &latlng,
+        &to_js(&json!({
+            "pane": "location", "interactive": false, "radius": accuracy,
+            "color": "#2563EB", "weight": 1, "fillColor": "#3B82F6", "fillOpacity": 0.12
+        })),
+    );
+    st.location_layer.add_child(&area);
+    st.location_layer.add_child(&L::circle_marker(
+        &latlng,
+        &to_js(&json!({
+            "pane": "location", "interactive": false, "radius": 8,
+            "color": "#FFFFFF", "weight": 3, "fillColor": "#2563EB", "fillOpacity": 1
+        })),
+    ));
+    let centered = st.centered_on_user.get();
+    if accuracy <= PRECISE_M {
+        if centered != Centered::Precise {
+            st.map.set_view(&latlng, st.map.get_zoom().max(LOCATE_ZOOM));
+            st.centered_on_user.set(Centered::Precise);
+        }
+    } else if centered == Centered::No {
+        // Frame the area of the approximate fix instead of zooming in on a wrong spot.
+        st.map.fit_bounds(&area.get_bounds(), &to_js(&json!({ "maxZoom": 17 })));
+        st.centered_on_user.set(Centered::Approximate);
+    }
+    st.locate.set(Locate::On);
 }
 
 // ---------------------------------------------------------------------------
@@ -551,6 +802,7 @@ fn load_localities(st: Rc<MapState>) {
 
         // City-wide totals for the default panel (only while it is still showing).
         if let Some(overall) = overall {
+            *st.home_stats.borrow_mut() = Some(panel_stats(&overall, json!(0)));
             st.selected_region.try_update(|r| {
                 if r.name == OVERVIEW {
                     // healthIndex 0 keeps the panel's tree-per-capita placeholder.
@@ -884,6 +1136,13 @@ mod tests {
         assert_eq!(fmt_thousands(6646), "6,646");
         assert_eq!(fmt_thousands(101228), "101,228");
         assert_eq!(fmt_thousands(1234567), "1,234,567");
+    }
+
+    #[test]
+    fn location_errors_are_explained() {
+        assert!(locate_error_text(1, Lang::Es).contains("permiso"));
+        assert!(locate_error_text(3, Lang::En).contains("too long"));
+        assert_eq!(locate_error_text(9, Lang::Es), locate_error_text(2, Lang::Es));
     }
 
     #[test]
